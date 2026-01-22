@@ -37,6 +37,7 @@ async def subscribe_to_room(room_id: str):
                 "type": EventType.Name(event.event_type),
                 "play_at": event.play_at_ms,
                 "server_time": event.server_time_ms,
+                "track_url": event.track_url,
             }
             await ws_manager.broadcast_to_room(room_id, message)
             print(f"[Gateway] Broadcasted {message['type']} to room {room_id}")
@@ -75,10 +76,25 @@ async def get_time():
     return JSONResponse({"server_time": server_time})
 
 
+@app.get("/api/songs")
+async def list_songs():
+    """List available songs from the songs directory."""
+    songs = []
+    if SONGS_DIR.exists():
+        for file_path in sorted(SONGS_DIR.iterdir()):
+            if file_path.suffix.lower() in ('.mp3', '.wav', '.ogg', '.m4a'):
+                songs.append({
+                    "filename": file_path.name,
+                    "url": f"/songs/{file_path.name}",
+                    "title": file_path.stem,  # filename without extension
+                })
+    return JSONResponse({"songs": songs})
+
+
 @app.post("/api/play")
-async def schedule_play(room_id: str = "default"):
+async def schedule_play(room_id: str = "default", track_url: str = ""):
     """Schedule playback for a room (master triggers this)."""
-    play_at, server_time = await grpc_client.schedule_play(room_id)
+    play_at, server_time = await grpc_client.schedule_play(room_id, track_url)
     return JSONResponse({
         "play_at": play_at,
         "server_time": server_time,

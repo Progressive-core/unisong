@@ -37,12 +37,12 @@ class GrpcClient:
         response = await self._time_stub.GetServerTime(pb2.Empty())
         return response.server_time_ms
 
-    async def schedule_play(self, room_id: str) -> tuple[int, int]:
+    async def schedule_play(self, room_id: str, track_url: str = "") -> tuple[int, int]:
         """
         Schedule playback for a room.
         Returns (play_at_ms, server_time_ms).
         """
-        request = pb2.SchedulePlayRequest(room_id=room_id)
+        request = pb2.SchedulePlayRequest(room_id=room_id, track_url=track_url)
         response = await self._room_stub.SchedulePlay(request)
         return response.play_at_ms, response.server_time_ms
 

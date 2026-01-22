@@ -13,6 +13,7 @@ class AudioPlayer {
         this.sourceNode = null;
         this.isPlaying = false;
         this.loadedUrl = null;
+        this.onTrackEnded = null;  // Callback for when track finishes naturally
     }
 
     /**
@@ -102,6 +103,10 @@ class AudioPlayer {
         this.sourceNode.onended = () => {
             this.isPlaying = false;
             console.log('[AudioPlayer] Playback ended');
+            // Trigger callback for auto-next functionality
+            if (this.onTrackEnded) {
+                this.onTrackEnded();
+            }
         };
 
         // Schedule the start
@@ -117,7 +122,7 @@ class AudioPlayer {
     }
 
     /**
-     * Stop current playback.
+     * Stop current playback and clear buffer to ensure fresh load.
      */
     stop() {
         if (this.sourceNode) {
@@ -130,6 +135,9 @@ class AudioPlayer {
             this.sourceNode = null;
         }
         this.isPlaying = false;
+        // Clear buffer to ensure fresh load for next track
+        this.audioBuffer = null;
+        this.loadedUrl = null;
     }
 
     /**

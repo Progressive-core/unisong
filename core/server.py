@@ -53,6 +53,7 @@ class RoomServiceServicer(pb2_grpc.RoomServiceServicer):
     async def SchedulePlay(self, request, context):
         """Schedule playback for a room."""
         room_id = request.room_id
+        track_url = request.track_url
         server_time = get_server_time_ms()
         play_at = server_time + LEAD_TIME_MS
 
@@ -61,12 +62,13 @@ class RoomServiceServicer(pb2_grpc.RoomServiceServicer):
             event_type=pb2.EVENT_TYPE_PLAY_SCHEDULED,
             play_at_ms=play_at,
             server_time_ms=server_time,
+            track_url=track_url,
         )
 
         # Broadcast to all subscribers
         await self._broadcast_to_room(room_id, event)
 
-        print(f"[Room {room_id}] Scheduled play at {play_at} (server_time={server_time})")
+        print(f"[Room {room_id}] Scheduled play at {play_at} (server_time={server_time}, track={track_url})")
 
         return pb2.SchedulePlayResponse(
             play_at_ms=play_at,

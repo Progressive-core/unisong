@@ -84,6 +84,28 @@
             font-weight: 500;
         }
 
+        .track-select {
+            background: rgba(0, 0, 0, 0.3);
+            color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-size: 0.95em;
+            cursor: pointer;
+            min-width: 200px;
+            max-width: 300px;
+        }
+
+        .track-select:focus {
+            outline: none;
+            border-color: #e94560;
+        }
+
+        .track-select option {
+            background: #1a1a2e;
+            color: #fff;
+        }
+
         .buttons {
             display: flex;
             gap: 12px;
@@ -202,6 +224,13 @@
             <div class="info-row">
                 <span class="info-label">RTT (min/max)</span>
                 <span class="info-value" id="rttStats">--</span>
+            </div>
+
+            <div class="info-row">
+                <span class="info-label">Track</span>
+                <select id="trackSelect" class="track-select">
+                    <option value="">Loading tracks...</option>
+                </select>
             </div>
 
             <div class="buttons">

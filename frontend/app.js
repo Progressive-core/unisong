@@ -13,6 +13,11 @@ class UnisongApp {
         this.roomId = 'default';
         this.isInitialized = false;
 
+        // Track list state
+        this.trackList = [];
+        this.selectedTrackUrl = '';
+        this.currentTrackIndex = 0;
+
         // UI elements
         this.statusEl = null;
         this.roleEl = null;
@@ -21,6 +26,7 @@ class UnisongApp {
         this.playBtn = null;
         this.startBtn = null;
         this.logEl = null;
+        this.trackSelectEl = null;
     }
 
     /**
@@ -43,6 +49,7 @@ class UnisongApp {
         this.playBtn = document.getElementById('playBtn');
         this.startBtn = document.getElementById('startBtn');
         this.logEl = document.getElementById('log');
+        this.trackSelectEl = document.getElementById('trackSelect');
 
         // Set role display
         this.roleEl.textContent = this.role.toUpperCase();
@@ -56,6 +63,14 @@ class UnisongApp {
         // Event listeners
         this.startBtn.addEventListener('click', () => this.start());
         this.playBtn.addEventListener('click', () => this.triggerPlay());
+
+        // Track selection listener
+        this.trackSelectEl.addEventListener('change', (e) => {
+            this.selectedTrackUrl = e.target.value;
+            // Find index for auto-next
+            this.currentTrackIndex = this.trackList.findIndex(t => t.url === this.selectedTrackUrl);
+            this.log(`Selected track: ${this.selectedTrackUrl}`);
+        });
     }
 
     /**
@@ -78,6 +93,33 @@ class UnisongApp {
     }
 
     /**
+     * Fetch available tracks from server.
+     */
+    async fetchTrackList() {
+        const response = await fetch('/api/songs');
+        const data = await response.json();
+        this.trackList = data.songs;
+
+        // Populate dropdown
+        this.trackSelectEl.innerHTML = '';
+        if (this.trackList.length === 0) {
+            this.trackSelectEl.innerHTML = '<option value="">No tracks available</option>';
+            return;
+        }
+
+        this.trackList.forEach((track, index) => {
+            const option = document.createElement('option');
+            option.value = track.url;
+            option.textContent = track.title;
+            this.trackSelectEl.appendChild(option);
+        });
+
+        // Select first track by default
+        this.selectedTrackUrl = this.trackList[0].url;
+        this.currentTrackIndex = 0;
+    }
+
+    /**
      * Start the application (called from user click).
      */
     async start() {
@@ -89,9 +131,13 @@ class UnisongApp {
             this.log('Initializing audio context...');
             await this.audioPlayer.initialize();
 
-            // Load audio file
-            this.log('Loading audio file...');
-            await this.audioPlayer.loadAudio('/songs/Aerial%20Boundaries.mp3');
+            // Set up track ended callback for auto-next
+            this.audioPlayer.onTrackEnded = () => this.handleTrackEnded();
+
+            // Fetch track list (don't preload audio - load on demand)
+            this.log('Fetching track list...');
+            await this.fetchTrackList();
+            this.log(`Found ${this.trackList.length} tracks`);
 
             // Sync clock
             this.log('Synchronizing clock with server...');
@@ -172,7 +218,7 @@ class UnisongApp {
                 break;
 
             case 'EVENT_TYPE_PLAY_SCHEDULED':
-                this.schedulePlayback(message.play_at, message.server_time);
+                this.handlePlayScheduled(message.play_at, message.server_time, message.track_url);
                 break;
 
             default:
@@ -181,23 +227,42 @@ class UnisongApp {
     }
 
     /**
-     * Schedule audio playback for the given server time.
+     * Handle play scheduled event - follows critical sequence: stop → load → schedule.
      */
-    schedulePlayback(playAtServerTime, serverTime) {
-        if (!this.audioPlayer.isReady()) {
-            this.log('Error: Audio not ready');
+    async handlePlayScheduled(playAtServerTime, serverTime, trackUrl) {
+        this.log(`Play scheduled: track=${trackUrl}`);
+
+        // STEP 1: Stop current playback and clear buffer
+        this.audioPlayer.stop();
+
+        // STEP 2: Load fresh audio buffer
+        this.log(`Loading audio: ${trackUrl}`);
+        this.setStatus('Loading...');
+        try {
+            await this.audioPlayer.loadAudio(trackUrl);
+        } catch (error) {
+            this.log(`Error loading audio: ${error.message}`);
+            this.setStatus('Error');
             return;
         }
 
-        // Convert server time to local time
+        // Update current track index for auto-next
+        const trackIndex = this.trackList.findIndex(t => t.url === trackUrl);
+        if (trackIndex !== -1) {
+            this.currentTrackIndex = trackIndex;
+            // Update dropdown to show current track
+            this.trackSelectEl.value = trackUrl;
+        }
+
+        // STEP 3: Schedule playback
         const playAtLocalTime = this.clockSync.serverToLocal(playAtServerTime);
         const now = Date.now();
         const delayMs = playAtLocalTime - now;
 
-        this.log(`Scheduling playback: server_time=${playAtServerTime}, local_time=${playAtLocalTime}, delay=${delayMs}ms`);
+        this.log(`Scheduling playback: delay=${delayMs}ms`);
 
         // Schedule the playback
-        const result = this.audioPlayer.schedulePlayback(playAtLocalTime);
+        this.audioPlayer.schedulePlayback(playAtLocalTime);
 
         this.setStatus(`Playing in ${Math.max(0, Math.round(delayMs))}ms...`);
 
@@ -210,6 +275,30 @@ class UnisongApp {
     }
 
     /**
+     * Handle track ended - auto-next (master only triggers server request).
+     */
+    handleTrackEnded() {
+        this.log('Track ended');
+        this.setStatus('Ready');
+
+        // Only master triggers auto-next
+        if (this.role !== 'master') {
+            this.log('Waiting for master to trigger next track...');
+            return;
+        }
+
+        // Calculate next track index (wrap around)
+        const nextIndex = (this.currentTrackIndex + 1) % this.trackList.length;
+        this.selectedTrackUrl = this.trackList[nextIndex].url;
+        this.trackSelectEl.value = this.selectedTrackUrl;
+
+        this.log(`Auto-next: playing track ${nextIndex + 1}/${this.trackList.length}`);
+
+        // Trigger server request (NOT direct playback)
+        this.triggerPlay();
+    }
+
+    /**
      * Trigger play command (master only).
      */
     async triggerPlay() {
@@ -218,11 +307,20 @@ class UnisongApp {
             return;
         }
 
+        if (!this.selectedTrackUrl) {
+            this.log('No track selected');
+            return;
+        }
+
         this.playBtn.disabled = true;
-        this.log('Triggering play...');
+        this.log(`Triggering play: ${this.selectedTrackUrl}`);
 
         try {
-            const response = await fetch(`/api/play?room_id=${this.roomId}`, {
+            const params = new URLSearchParams({
+                room_id: this.roomId,
+                track_url: this.selectedTrackUrl,
+            });
+            const response = await fetch(`/api/play?${params}`, {
                 method: 'POST',
             });
             const data = await response.json();

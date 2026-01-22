@@ -29,6 +29,7 @@ message TimeResponse {
 // Request to schedule playback
 message SchedulePlayRequest {
   string room_id = 1;
+  string track_url = 2;  // URL of track to play
 }
 
 // Response with scheduled play time
@@ -55,4 +56,5 @@ message RoomEvent {
   EventType event_type = 1;
   int64 play_at_ms = 2;      // When to start playback
   int64 server_time_ms = 3;  // Server time when event was created
+  string track_url = 4;      // URL of track to play
 }
