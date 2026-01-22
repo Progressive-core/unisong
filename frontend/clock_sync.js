@@ -94,6 +94,11 @@ class ClockSync {
         this.offset = bestSample.offset;
         this.lastSyncTime = this.getLocalTime();
 
+        // Record RTT samples to diagnostics
+        if (window.syncDiagnostics) {
+            window.syncDiagnostics.recordRttSamples(this.samples);
+        }
+
         console.log(`[ClockSync] Sync complete: offset=${this.offset}ms (best RTT=${bestSample.rtt}ms)`);
 
         return {

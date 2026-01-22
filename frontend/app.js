@@ -17,6 +17,7 @@ class UnisongApp {
         this.statusEl = null;
         this.roleEl = null;
         this.offsetEl = null;
+        this.rttStatsEl = null;
         this.playBtn = null;
         this.startBtn = null;
         this.logEl = null;
@@ -38,6 +39,7 @@ class UnisongApp {
         this.statusEl = document.getElementById('status');
         this.roleEl = document.getElementById('role');
         this.offsetEl = document.getElementById('offset');
+        this.rttStatsEl = document.getElementById('rttStats');
         this.playBtn = document.getElementById('playBtn');
         this.startBtn = document.getElementById('startBtn');
         this.logEl = document.getElementById('log');
@@ -96,6 +98,12 @@ class UnisongApp {
             const syncResult = await this.clockSync.sync();
             this.offsetEl.textContent = `${syncResult.offset.toFixed(0)}ms`;
             this.log(`Clock synced: offset=${syncResult.offset.toFixed(0)}ms`);
+
+            // Display RTT diagnostics
+            const rttStats = window.syncDiagnostics?.getRttStats();
+            if (rttStats) {
+                this.rttStatsEl.textContent = `${rttStats.min}/${rttStats.max}ms`;
+            }
 
             // Connect WebSocket
             this.log('Connecting to WebSocket...');

@@ -76,11 +76,17 @@ class AudioPlayer {
 
         // Calculate delay from now
         const now = Date.now();
-        let delayMs = playAtLocalTime - now;
+        const rawDelayMs = playAtLocalTime - now;
+        let delayMs = rawDelayMs;
 
         if (delayMs < 0) {
             // Playback time already passed due to timing quantization
             delayMs = 0;
+        }
+
+        // Record delay metrics to diagnostics
+        if (window.syncDiagnostics) {
+            window.syncDiagnostics.recordPlaybackDelay(rawDelayMs, delayMs);
         }
 
         // Convert to audio context time (seconds)
