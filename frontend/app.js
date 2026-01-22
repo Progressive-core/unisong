@@ -211,10 +211,13 @@ class UnisongApp {
         }
 
         this.playBtn.disabled = true;
-        this.log('Triggering play...');
+
+        // Compute adaptive lead time based on observed network conditions
+        const leadTime = this.clockSync.getAdaptiveLeadTime();
+        this.log(`Triggering play with lead_time=${leadTime}ms...`);
 
         try {
-            const response = await fetch(`/api/play?room_id=${this.roomId}`, {
+            const response = await fetch(`/api/play?room_id=${this.roomId}&lead_time=${leadTime}`, {
                 method: 'POST',
             });
             const data = await response.json();

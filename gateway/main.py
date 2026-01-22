@@ -76,9 +76,9 @@ async def get_time():
 
 
 @app.post("/api/play")
-async def schedule_play(room_id: str = "default"):
+async def schedule_play(room_id: str = "default", lead_time: int = 0):
     """Schedule playback for a room (master triggers this)."""
-    play_at, server_time = await grpc_client.schedule_play(room_id)
+    play_at, server_time = await grpc_client.schedule_play(room_id, lead_time)
     return JSONResponse({
         "play_at": play_at,
         "server_time": server_time,

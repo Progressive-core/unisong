@@ -13,8 +13,9 @@ import grpc
 import core.unisong_pb2 as pb2
 import core.unisong_pb2_grpc as pb2_grpc
 
-# Lead time before playback starts (ms)
-LEAD_TIME_MS = 3000
+# Default lead time before playback starts (ms)
+# Used when client doesn't provide a lead time
+DEFAULT_LEAD_TIME_MS = 3000
 
 
 def get_server_time_ms() -> int:
@@ -53,8 +54,9 @@ class RoomServiceServicer(pb2_grpc.RoomServiceServicer):
     async def SchedulePlay(self, request, context):
         """Schedule playback for a room."""
         room_id = request.room_id
+        lead_time = request.lead_time_ms if request.lead_time_ms > 0 else DEFAULT_LEAD_TIME_MS
         server_time = get_server_time_ms()
-        play_at = server_time + LEAD_TIME_MS
+        play_at = server_time + lead_time
 
         # Create event and broadcast to subscribers
         event = pb2.RoomEvent(
@@ -66,7 +68,7 @@ class RoomServiceServicer(pb2_grpc.RoomServiceServicer):
         # Broadcast to all subscribers
         await self._broadcast_to_room(room_id, event)
 
-        print(f"[Room {room_id}] Scheduled play at {play_at} (server_time={server_time})")
+        print(f"[Room {room_id}] Scheduled play at {play_at} (lead_time={lead_time}ms)")
 
         return pb2.SchedulePlayResponse(
             play_at_ms=play_at,
@@ -114,7 +116,7 @@ async def serve():
     print("Unisong gRPC Core Service")
     print("=" * 50)
     print(f"Listening on port 50051")
-    print(f"Lead time: {LEAD_TIME_MS}ms")
+    print(f"Default lead time: {DEFAULT_LEAD_TIME_MS}ms")
     print("=" * 50)
 
     await server.start()

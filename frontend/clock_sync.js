@@ -5,6 +5,11 @@
  * using multiple HTTP requests to measure RTT and estimate offset.
  */
 
+// Adaptive lead time constants
+const BASE_LEAD_TIME_MS = 2000;
+const MIN_LEAD_TIME_MS = 2000;
+const MAX_LEAD_TIME_MS = 8000;
+
 class ClockSync {
     constructor(options = {}) {
         this.serverTimeUrl = options.serverTimeUrl || '/api/time';
@@ -108,6 +113,44 @@ class ClockSync {
      */
     sleep(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    /**
+     * Compute adaptive lead time based on observed RTT.
+     * Must be called after sync().
+     *
+     * Formula:
+     *   adaptive_lead_time = BASE_LEAD_TIME_MS + RTT_BUFFER + JITTER_BUFFER
+     *   RTT_BUFFER = best_rtt * 2
+     *   JITTER_BUFFER = max_rtt - min_rtt
+     *
+     * Returns lead time clamped to [MIN_LEAD_TIME_MS, MAX_LEAD_TIME_MS].
+     */
+    getAdaptiveLeadTime() {
+        if (this.samples.length === 0) {
+            return BASE_LEAD_TIME_MS;
+        }
+
+        const rtts = this.samples.map(s => s.rtt);
+        const minRtt = Math.min(...rtts);
+        const maxRtt = Math.max(...rtts);
+
+        // RTT buffer: 2x the best observed RTT
+        const rttBuffer = minRtt * 2;
+
+        // Jitter buffer: difference between max and min RTT
+        const jitterBuffer = maxRtt - minRtt;
+
+        // Compute adaptive lead time
+        let adaptiveLeadTime = BASE_LEAD_TIME_MS + rttBuffer + jitterBuffer;
+
+        // Clamp to valid range
+        adaptiveLeadTime = Math.max(MIN_LEAD_TIME_MS, Math.min(MAX_LEAD_TIME_MS, adaptiveLeadTime));
+
+        console.log(`[ClockSync] Adaptive lead time: ${Math.round(adaptiveLeadTime)}ms ` +
+            `(base=${BASE_LEAD_TIME_MS}, rtt_buffer=${Math.round(rttBuffer)}, jitter=${Math.round(jitterBuffer)})`);
+
+        return Math.round(adaptiveLeadTime);
     }
 }
 

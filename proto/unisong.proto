@@ -29,6 +29,7 @@ message TimeResponse {
 // Request to schedule playback
 message SchedulePlayRequest {
   string room_id = 1;
+  int64 lead_time_ms = 2;  // Client-provided lead time (0 = use server default)
 }
 
 // Response with scheduled play time
