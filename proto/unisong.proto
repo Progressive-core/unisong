@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package unisong;
+
+// Time service for clock synchronization
+service TimeService {
+  // Get current server time in milliseconds
+  rpc GetServerTime(Empty) returns (TimeResponse);
+}
+
+// Room service for coordinated playback
+service RoomService {
+  // Schedule playback for a room - returns when to play
+  rpc SchedulePlay(SchedulePlayRequest) returns (SchedulePlayResponse);
+
+  // Subscribe to room events (server streaming)
+  rpc SubscribeEvents(SubscribeRequest) returns (stream RoomEvent);
+}
+
+// Empty message for requests with no parameters
+message Empty {}
+
+// Server time response
+// All *_ms fields are Unix wall-clock time in milliseconds (not monotonic)
+message TimeResponse {
+  int64 server_time_ms = 1;
+}
+
+// Request to schedule playback
+message SchedulePlayRequest {
+  string room_id = 1;
+}
+
+// Response with scheduled play time
+// All *_ms fields are Unix wall-clock time in milliseconds (not monotonic)
+message SchedulePlayResponse {
+  int64 play_at_ms = 1;      // When playback should start
+  int64 server_time_ms = 2;  // Current server time for reference
+}
+
+// Request to subscribe to room events
+message SubscribeRequest {
+  string room_id = 1;
+}
+
+// Event types for room events
+enum EventType {
+  EVENT_TYPE_UNSPECIFIED = 0;
+  EVENT_TYPE_PLAY_SCHEDULED = 1;
+}
+
+// Event sent to room subscribers
+// All *_ms fields are Unix wall-clock time in milliseconds (not monotonic)
+message RoomEvent {
+  EventType event_type = 1;
+  int64 play_at_ms = 2;      // When to start playback
+  int64 server_time_ms = 3;  // Server time when event was created
+}
