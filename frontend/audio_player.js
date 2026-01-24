@@ -33,6 +33,19 @@ class AudioPlayer {
         }
 
         console.log('[AudioPlayer] Initialized, context time:', this.audioContext.currentTime);
+        console.log('[AudioPlayer] Initial state:', this.audioContext.state);
+
+        // iOS unlock: Play silent buffer to unlock audio
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+        if (isIOS) {
+            console.log('[AudioPlayer] iOS detected, playing unlock buffer');
+            const buffer = this.audioContext.createBuffer(1, 1, 22050);
+            const source = this.audioContext.createBufferSource();
+            source.buffer = buffer;
+            source.connect(this.audioContext.destination);
+            source.start(0);
+            console.log('[AudioPlayer] iOS unlock buffer played');
+        }
     }
 
     /**
@@ -74,10 +87,18 @@ class AudioPlayer {
 
         console.log('[AudioPlayer] AudioContext state:', this.audioContext.state);
 
-        // Resume audio context if suspended (important for some browsers)
+        // Resume audio context if suspended (important for iOS and some browsers)
         if (this.audioContext.state === 'suspended') {
             console.log('[AudioPlayer] Resuming suspended AudioContext');
             await this.audioContext.resume();
+            console.log('[AudioPlayer] AudioContext resumed, new state:', this.audioContext.state);
+        }
+
+        // iOS workaround: Double-check state after resume attempt
+        if (this.audioContext.state !== 'running') {
+            console.warn('[AudioPlayer] AudioContext not running after resume attempt!');
+            await this.audioContext.resume();
+            console.log('[AudioPlayer] Second resume attempt, state:', this.audioContext.state);
         }
 
         // Stop any existing playback if there's a source node
