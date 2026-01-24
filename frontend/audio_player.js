@@ -14,6 +14,7 @@ class AudioPlayer {
         this.isPlaying = false;
         this.loadedUrl = null;
         this.onTrackEnded = null;  // Callback for when track finishes naturally
+        this.bufferCache = {};  // Cache for iOS to store multiple buffers
     }
 
     /**

@@ -134,10 +134,23 @@ class UnisongApp {
             // Set up track ended callback for auto-next
             this.audioPlayer.onTrackEnded = () => this.handleTrackEnded();
 
-            // Fetch track list (don't preload audio - load on demand)
+            // Fetch track list
             this.log('Fetching track list...');
             await this.fetchTrackList();
             this.log(`Found ${this.trackList.length} tracks`);
+
+            // iOS workaround: Preload first track during user gesture
+            // iOS blocks audio loading outside of user gesture context
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+            if (isIOS && this.trackList.length > 0) {
+                this.log('iOS detected: preloading first track...');
+                try {
+                    await this.audioPlayer.loadAudio(this.trackList[0].url);
+                    this.log('First track preloaded for iOS');
+                } catch (error) {
+                    this.log(`Warning: Could not preload track: ${error.message}`);
+                }
+            }
 
             // Sync clock
             this.log('Synchronizing clock with server...');
@@ -241,18 +254,38 @@ class UnisongApp {
             return;
         }
 
-        // STEP 1: Stop current playback and clear buffer
-        this.audioPlayer.stop();
+        // STEP 1: Stop current playback (but keep buffer if same track)
+        const isSameTrack = this.audioPlayer.loadedUrl === trackUrl;
+        if (!isSameTrack) {
+            this.audioPlayer.stop();
+        } else {
+            // Same track, just stop playback but keep buffer
+            if (this.audioPlayer.sourceNode) {
+                this.audioPlayer.sourceNode.onended = null;
+                try {
+                    this.audioPlayer.sourceNode.stop();
+                    this.audioPlayer.sourceNode.disconnect();
+                } catch (e) {
+                    // Ignore errors if already stopped
+                }
+                this.audioPlayer.sourceNode = null;
+                this.audioPlayer.isPlaying = false;
+            }
+        }
 
-        // STEP 2: Load fresh audio buffer
-        this.log(`Loading audio: ${trackUrl}`);
-        this.setStatus('Loading...');
-        try {
-            await this.audioPlayer.loadAudio(trackUrl);
-        } catch (error) {
-            this.log(`Error loading audio: ${error.message}`);
-            this.setStatus('Error');
-            return;
+        // STEP 2: Load fresh audio buffer (only if different track)
+        if (!isSameTrack) {
+            this.log(`Loading audio: ${trackUrl}`);
+            this.setStatus('Loading...');
+            try {
+                await this.audioPlayer.loadAudio(trackUrl);
+            } catch (error) {
+                this.log(`Error loading audio: ${error.message}`);
+                this.setStatus('Error');
+                return;
+            }
+        } else {
+            this.log(`Track already loaded: ${trackUrl}`);
         }
 
         // Update current track index for auto-next
