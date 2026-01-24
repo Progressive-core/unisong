@@ -80,8 +80,18 @@ class AudioPlayer {
             await this.audioContext.resume();
         }
 
-        // Stop any existing playback
-        this.stop();
+        // Stop any existing playback if there's a source node
+        if (this.sourceNode) {
+            console.log('[AudioPlayer] Stopping existing source node');
+            try {
+                this.sourceNode.stop();
+                this.sourceNode.disconnect();
+            } catch (e) {
+                // Ignore errors if already stopped
+            }
+            this.sourceNode = null;
+            this.isPlaying = false;
+        }
 
         // Calculate delay from now
         const now = Date.now();
@@ -122,10 +132,15 @@ class AudioPlayer {
         };
 
         // Schedule the start
-        this.sourceNode.start(startTime);
-        this.isPlaying = true;
-
-        console.log(`[AudioPlayer] Scheduled to start in ${delayMs}ms (at context time ${startTime.toFixed(3)}s)`);
+        try {
+            this.sourceNode.start(startTime);
+            this.isPlaying = true;
+            console.log(`[AudioPlayer] Scheduled to start in ${delayMs}ms (at context time ${startTime.toFixed(3)}s)`);
+            console.log(`[AudioPlayer] Source node created and scheduled successfully`);
+        } catch (error) {
+            console.error('[AudioPlayer] Error starting source node:', error);
+            throw error;
+        }
 
         return {
             scheduledDelay: delayMs,
@@ -138,6 +153,8 @@ class AudioPlayer {
      */
     stop() {
         if (this.sourceNode) {
+            // Clear onended handler to prevent it from firing
+            this.sourceNode.onended = null;
             try {
                 this.sourceNode.stop();
                 this.sourceNode.disconnect();
