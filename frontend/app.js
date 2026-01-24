@@ -234,6 +234,13 @@ class UnisongApp {
         this.log(`Play scheduled: track=${trackUrl}`);
         console.log('[App] handlePlayScheduled called', { playAtServerTime, serverTime, trackUrl });
 
+        // Check if audio context is initialized
+        if (!this.audioPlayer.audioContext) {
+            this.log('ERROR: Audio not initialized. Click "Start" first!');
+            console.error('[App] Audio context not initialized');
+            return;
+        }
+
         // STEP 1: Stop current playback and clear buffer
         this.audioPlayer.stop();
 
@@ -264,7 +271,14 @@ class UnisongApp {
         this.log(`Scheduling playback: delay=${delayMs}ms`);
 
         // Schedule the playback
-        await this.audioPlayer.schedulePlayback(playAtLocalTime);
+        try {
+            await this.audioPlayer.schedulePlayback(playAtLocalTime);
+        } catch (error) {
+            this.log(`Error scheduling playback: ${error.message}`);
+            console.error('[App] Scheduling error:', error);
+            this.setStatus('Error');
+            return;
+        }
 
         this.setStatus(`Playing in ${Math.max(0, Math.round(delayMs))}ms...`);
 
