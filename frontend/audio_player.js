@@ -36,16 +36,17 @@ class AudioPlayer {
         console.log('[AudioPlayer] Initialized, context time:', this.audioContext.currentTime);
         console.log('[AudioPlayer] Initial state:', this.audioContext.state);
 
-        // iOS unlock: Play silent buffer to unlock audio
-        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-        if (isIOS) {
-            console.log('[AudioPlayer] iOS detected, playing unlock buffer');
+        // iOS/Mobile unlock: Play silent buffer to unlock audio
+        const isMobile = /iPad|iPhone|iPod|Android|webOS|BlackBerry|Windows Phone/i.test(navigator.userAgent) ||
+                       (navigator.maxTouchPoints && navigator.maxTouchPoints > 2);
+        if (isMobile) {
+            console.log('[AudioPlayer] Mobile detected, playing unlock buffer');
             const buffer = this.audioContext.createBuffer(1, 1, 22050);
             const source = this.audioContext.createBufferSource();
             source.buffer = buffer;
             source.connect(this.audioContext.destination);
             source.start(0);
-            console.log('[AudioPlayer] iOS unlock buffer played');
+            console.log('[AudioPlayer] Mobile unlock buffer played');
         }
     }
 

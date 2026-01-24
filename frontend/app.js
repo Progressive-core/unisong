@@ -139,14 +139,17 @@ class UnisongApp {
             await this.fetchTrackList();
             this.log(`Found ${this.trackList.length} tracks`);
 
-            // iOS workaround: Preload first track during user gesture
-            // iOS blocks audio loading outside of user gesture context
-            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-            if (isIOS && this.trackList.length > 0) {
-                this.log('iOS detected: preloading first track...');
+            // iOS/Mobile workaround: Preload first track during user gesture
+            // iOS and mobile browsers block audio loading outside of user gesture context
+            const isMobile = /iPad|iPhone|iPod|Android|webOS|BlackBerry|Windows Phone/i.test(navigator.userAgent) ||
+                           (navigator.maxTouchPoints && navigator.maxTouchPoints > 2);
+            this.log(`Mobile detected: ${isMobile}, UA: ${navigator.userAgent.substring(0, 50)}...`);
+
+            if (isMobile && this.trackList.length > 0) {
+                this.log('Mobile device: preloading first track...');
                 try {
                     await this.audioPlayer.loadAudio(this.trackList[0].url);
-                    this.log('First track preloaded for iOS');
+                    this.log('First track preloaded for mobile');
                 } catch (error) {
                     this.log(`Warning: Could not preload track: ${error.message}`);
                 }
