@@ -210,6 +210,7 @@ class UnisongApp {
      */
     handleMessage(message) {
         this.log(`Received: ${message.type}`);
+        console.log('[App] WebSocket message:', message);
 
         switch (message.type) {
             case 'time_sync':
@@ -231,6 +232,7 @@ class UnisongApp {
      */
     async handlePlayScheduled(playAtServerTime, serverTime, trackUrl) {
         this.log(`Play scheduled: track=${trackUrl}`);
+        console.log('[App] handlePlayScheduled called', { playAtServerTime, serverTime, trackUrl });
 
         // STEP 1: Stop current playback and clear buffer
         this.audioPlayer.stop();
@@ -262,7 +264,7 @@ class UnisongApp {
         this.log(`Scheduling playback: delay=${delayMs}ms`);
 
         // Schedule the playback
-        this.audioPlayer.schedulePlayback(playAtLocalTime);
+        await this.audioPlayer.schedulePlayback(playAtLocalTime);
 
         this.setStatus(`Playing in ${Math.max(0, Math.round(delayMs))}ms...`);
 
@@ -350,4 +352,6 @@ class UnisongApp {
 document.addEventListener('DOMContentLoaded', () => {
     const app = new UnisongApp();
     app.init();
+    // Expose for debugging
+    window.app = app;
 });

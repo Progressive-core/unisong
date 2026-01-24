@@ -67,9 +67,17 @@ class AudioPlayer {
      *
      * @param {number} playAtLocalTime - Unix timestamp in ms when playback should start
      */
-    schedulePlayback(playAtLocalTime) {
+    async schedulePlayback(playAtLocalTime) {
         if (!this.audioContext || !this.audioBuffer) {
             throw new Error('Audio not loaded');
+        }
+
+        console.log('[AudioPlayer] AudioContext state:', this.audioContext.state);
+
+        // Resume audio context if suspended (important for some browsers)
+        if (this.audioContext.state === 'suspended') {
+            console.log('[AudioPlayer] Resuming suspended AudioContext');
+            await this.audioContext.resume();
         }
 
         // Stop any existing playback
@@ -101,10 +109,14 @@ class AudioPlayer {
 
         // Handle playback end
         this.sourceNode.onended = () => {
+            // Only trigger callback if we were actually playing
+            // (not if stop() was called manually)
+            const wasPlaying = this.isPlaying;
             this.isPlaying = false;
-            console.log('[AudioPlayer] Playback ended');
-            // Trigger callback for auto-next functionality
-            if (this.onTrackEnded) {
+            console.log('[AudioPlayer] Playback ended, wasPlaying:', wasPlaying);
+
+            // Only trigger auto-next if track finished naturally
+            if (wasPlaying && this.onTrackEnded) {
                 this.onTrackEnded();
             }
         };
