@@ -112,10 +112,17 @@ class AudioPlayer {
         const delaySeconds = delayMs / 1000;
         const startTime = this.audioContext.currentTime + delaySeconds;
 
+        console.log('[AudioPlayer] Current context time:', this.audioContext.currentTime);
+        console.log('[AudioPlayer] Start time:', startTime);
+        console.log('[AudioPlayer] Delay seconds:', delaySeconds);
+
         // Create and configure source node
         this.sourceNode = this.audioContext.createBufferSource();
         this.sourceNode.buffer = this.audioBuffer;
         this.sourceNode.connect(this.audioContext.destination);
+
+        console.log('[AudioPlayer] Source connected to destination:', this.audioContext.destination);
+        console.log('[AudioPlayer] Buffer duration:', this.audioBuffer.duration, 'seconds');
 
         // Handle playback end
         this.sourceNode.onended = () => {
