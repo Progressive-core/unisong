@@ -17,6 +17,8 @@ class UnisongApp {
         this.trackList = [];
         this.selectedTrackUrl = '';
         this.currentTrackIndex = 0;
+        this.nextTrackPreloadTimer = null;  // Timer for preloading next track
+        this.isMobile = false;
 
         // UI elements
         this.statusEl = null;
@@ -139,29 +141,10 @@ class UnisongApp {
             await this.fetchTrackList();
             this.log(`Found ${this.trackList.length} tracks`);
 
-            // iOS/Mobile workaround: Preload ALL tracks during user gesture
-            // iOS and mobile browsers block audio loading outside of user gesture context
-            // Also, mobile loading is slow, so we preload to avoid missing play times
-            const isMobile = /iPad|iPhone|iPod|Android|webOS|BlackBerry|Windows Phone/i.test(navigator.userAgent) ||
+            // Detect mobile (for smart preloading strategy)
+            this.isMobile = /iPad|iPhone|iPod|Android|webOS|BlackBerry|Windows Phone/i.test(navigator.userAgent) ||
                            (navigator.maxTouchPoints && navigator.maxTouchPoints > 2);
-            this.log(`Mobile detected: ${isMobile}, UA: ${navigator.userAgent.substring(0, 50)}...`);
-
-            if (isMobile && this.trackList.length > 0) {
-                this.log(`Mobile device: preloading all ${this.trackList.length} tracks...`);
-                this.setStatus('Preloading tracks...');
-
-                for (let i = 0; i < this.trackList.length; i++) {
-                    try {
-                        this.log(`Preloading ${i + 1}/${this.trackList.length}: ${this.trackList[i].title}`);
-                        await this.audioPlayer.loadAudio(this.trackList[i].url);
-                        // Store in cache
-                        this.audioPlayer.bufferCache[this.trackList[i].url] = this.audioPlayer.audioBuffer;
-                    } catch (error) {
-                        this.log(`Warning: Could not preload track ${i + 1}: ${error.message}`);
-                    }
-                }
-                this.log('All tracks preloaded for mobile');
-            }
+            this.log(`Mobile detected: ${this.isMobile}, UA: ${navigator.userAgent.substring(0, 50)}...`);
 
             // Sync clock
             this.log('Synchronizing clock with server...');
@@ -265,38 +248,22 @@ class UnisongApp {
             return;
         }
 
-        // STEP 1: Stop current playback (but keep buffer if same track)
-        const isSameTrack = this.audioPlayer.loadedUrl === trackUrl;
-        if (!isSameTrack) {
-            this.audioPlayer.stop();
-        } else {
-            // Same track, just stop playback but keep buffer
-            if (this.audioPlayer.sourceNode) {
-                this.audioPlayer.sourceNode.onended = null;
-                try {
-                    this.audioPlayer.sourceNode.stop();
-                    this.audioPlayer.sourceNode.disconnect();
-                } catch (e) {
-                    // Ignore errors if already stopped
-                }
-                this.audioPlayer.sourceNode = null;
-                this.audioPlayer.isPlaying = false;
-            }
-        }
+        // STEP 1: Stop current playback
+        this.audioPlayer.stop();
 
-        // STEP 2: Load fresh audio buffer (only if different track)
-        if (!isSameTrack) {
-            this.log(`Loading audio: ${trackUrl}`);
-            this.setStatus('Loading...');
-            try {
-                await this.audioPlayer.loadAudio(trackUrl);
-            } catch (error) {
-                this.log(`Error loading audio: ${error.message}`);
-                this.setStatus('Error');
-                return;
+        // STEP 2: Load audio buffer (from cache or fetch)
+        this.log(`Loading audio: ${trackUrl}`);
+        this.setStatus('Loading...');
+        try {
+            await this.audioPlayer.loadAudio(trackUrl);
+            // Cache it for future use (mobile)
+            if (this.isMobile) {
+                this.audioPlayer.bufferCache[trackUrl] = this.audioPlayer.audioBuffer;
             }
-        } else {
-            this.log(`Track already loaded: ${trackUrl}`);
+        } catch (error) {
+            this.log(`Error loading audio: ${error.message}`);
+            this.setStatus('Error');
+            return;
         }
 
         // Update current track index for auto-next
@@ -332,6 +299,69 @@ class UnisongApp {
                 this.setStatus('Playing');
             }
         }, Math.max(0, delayMs + 100));
+
+        // STEP 4: Schedule preloading of next track (smart preloading)
+        this.scheduleNextTrackPreload();
+    }
+
+    /**
+     * Schedule preloading of next track before current track ends.
+     * Called after playback is scheduled.
+     */
+    scheduleNextTrackPreload() {
+        // Cancel any existing preload timer
+        if (this.nextTrackPreloadTimer) {
+            clearTimeout(this.nextTrackPreloadTimer);
+            this.nextTrackPreloadTimer = null;
+        }
+
+        // Get current track duration
+        const duration = this.audioPlayer.audioBuffer?.duration;
+        if (!duration) {
+            return;
+        }
+
+        // Calculate next track index
+        const nextIndex = (this.currentTrackIndex + 1) % this.trackList.length;
+        const nextTrack = this.trackList[nextIndex];
+
+        if (!nextTrack) {
+            return;
+        }
+
+        // Schedule preload 10 seconds before track ends (or immediately if track < 15 seconds)
+        const preloadTime = Math.max(0, (duration - 10) * 1000);
+
+        this.log(`Will preload next track in ${(preloadTime / 1000).toFixed(1)}s: ${nextTrack.title}`);
+
+        this.nextTrackPreloadTimer = setTimeout(async () => {
+            // Check if already cached
+            if (this.audioPlayer.bufferCache[nextTrack.url]) {
+                this.log(`Next track already cached: ${nextTrack.title}`);
+                return;
+            }
+
+            this.log(`Preloading next track: ${nextTrack.title}`);
+            try {
+                // Temporarily save current buffer
+                const currentBuffer = this.audioPlayer.audioBuffer;
+                const currentUrl = this.audioPlayer.loadedUrl;
+
+                // Load next track
+                await this.audioPlayer.loadAudio(nextTrack.url);
+
+                // Cache it
+                this.audioPlayer.bufferCache[nextTrack.url] = this.audioPlayer.audioBuffer;
+
+                // Restore current buffer
+                this.audioPlayer.audioBuffer = currentBuffer;
+                this.audioPlayer.loadedUrl = currentUrl;
+
+                this.log(`Next track preloaded: ${nextTrack.title}`);
+            } catch (error) {
+                this.log(`Warning: Could not preload next track: ${error.message}`);
+            }
+        }, preloadTime);
     }
 
     /**

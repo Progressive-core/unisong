@@ -189,7 +189,8 @@ class AudioPlayer {
     }
 
     /**
-     * Stop current playback and clear buffer to ensure fresh load.
+     * Stop current playback and clear buffer.
+     * Note: Does NOT clear bufferCache (used for smart preloading).
      */
     stop() {
         if (this.sourceNode) {
@@ -204,7 +205,7 @@ class AudioPlayer {
             this.sourceNode = null;
         }
         this.isPlaying = false;
-        // Clear buffer to ensure fresh load for next track
+        // Clear current buffer (but keep cache)
         this.audioBuffer = null;
         this.loadedUrl = null;
     }
