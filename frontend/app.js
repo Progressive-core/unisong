@@ -19,6 +19,7 @@ class UnisongApp {
         this.currentTrackIndex = 0;
         this.nextTrackPreloadTimer = null;  // Timer for preloading next track
         this.isMobile = false;
+        this.roomStatus = null;  // Room status (clients and their ready state)
 
         // UI elements
         this.statusEl = null;
@@ -57,9 +58,15 @@ class UnisongApp {
         this.roleEl.textContent = this.role.toUpperCase();
         this.roleEl.className = `role-badge ${this.role}`;
 
-        // Only master can trigger play
+        // Only master can trigger play and see client list
         if (this.role !== 'master') {
             this.playBtn.style.display = 'none';
+        } else {
+            // Show client list for master
+            const clientListCard = document.getElementById('clientListCard');
+            if (clientListCard) {
+                clientListCard.style.display = 'block';
+            }
         }
 
         // Event listeners
@@ -92,6 +99,31 @@ class UnisongApp {
      */
     setStatus(status) {
         this.statusEl.textContent = status;
+    }
+
+    /**
+     * Send ready message to server.
+     */
+    sendReady(trackUrl) {
+        if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+            this.websocket.send(JSON.stringify({
+                type: 'client_ready',
+                track_url: trackUrl,
+            }));
+            this.log(`Sent ready: ${trackUrl}`);
+        }
+    }
+
+    /**
+     * Send not-ready message to server.
+     */
+    sendNotReady() {
+        if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+            this.websocket.send(JSON.stringify({
+                type: 'client_not_ready',
+            }));
+            this.log('Sent not ready');
+        }
     }
 
     /**
@@ -184,7 +216,7 @@ class UnisongApp {
     connectWebSocket() {
         return new Promise((resolve, reject) => {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${protocol}//${window.location.host}/ws?room_id=${this.roomId}`;
+            const wsUrl = `${protocol}//${window.location.host}/ws?room_id=${this.roomId}&role=${this.role}`;
 
             this.websocket = new WebSocket(wsUrl);
 
@@ -229,6 +261,10 @@ class UnisongApp {
                 this.handlePlayScheduled(message.play_at, message.server_time, message.track_url);
                 break;
 
+            case 'room_status':
+                this.handleRoomStatus(message.status);
+                break;
+
             default:
                 this.log(`Unknown message type: ${message.type}`);
         }
@@ -254,12 +290,15 @@ class UnisongApp {
         // STEP 2: Load audio buffer (from cache or fetch)
         this.log(`Loading audio: ${trackUrl}`);
         this.setStatus('Loading...');
+        this.sendNotReady();  // Notify server we're loading
+
         try {
             await this.audioPlayer.loadAudio(trackUrl);
             // Cache it for future use (mobile)
             if (this.isMobile) {
                 this.audioPlayer.bufferCache[trackUrl] = this.audioPlayer.audioBuffer;
             }
+            this.sendReady(trackUrl);  // Notify server we're ready
         } catch (error) {
             this.log(`Error loading audio: ${error.message}`);
             this.setStatus('Error');
@@ -362,6 +401,53 @@ class UnisongApp {
                 this.log(`Warning: Could not preload next track: ${error.message}`);
             }
         }, preloadTime);
+    }
+
+    /**
+     * Handle room status update.
+     */
+    handleRoomStatus(status) {
+        this.roomStatus = status;
+        console.log('[App] Room status:', status);
+
+        // Only master needs to update UI based on room status
+        if (this.role === 'master') {
+            this.updateClientList(status);
+            this.updatePlayButton(status);
+        }
+    }
+
+    /**
+     * Update client list display (master only).
+     */
+    updateClientList(status) {
+        const clientListEl = document.getElementById('clientList');
+        if (!clientListEl) return;
+
+        clientListEl.innerHTML = '';
+        status.clients.forEach(client => {
+            const item = document.createElement('div');
+            item.className = 'client-item';
+            item.innerHTML = `
+                <span class="client-id">${client.client_id}</span>
+                <span class="client-status ${client.ready ? 'ready' : 'not-ready'}">
+                    ${client.ready ? '✓ Ready' : '⌛ Loading...'}
+                </span>
+            `;
+            clientListEl.appendChild(item);
+        });
+    }
+
+    /**
+     * Update Play button state (master only).
+     */
+    updatePlayButton(status) {
+        if (this.playBtn) {
+            this.playBtn.disabled = !status.all_ready || status.client_count === 0;
+            if (!status.all_ready && status.client_count > 0) {
+                this.setStatus('Waiting for all clients...');
+            }
+        }
     }
 
     /**

@@ -3,6 +3,7 @@ FastAPI Gateway - HTTP/WebSocket interface for browser clients.
 """
 
 import asyncio
+import json
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -91,6 +92,13 @@ async def list_songs():
     return JSONResponse({"songs": songs})
 
 
+@app.get("/api/room/{room_id}/status")
+async def get_room_status(room_id: str):
+    """Get status of all clients in a room."""
+    status = await ws_manager.get_room_status(room_id)
+    return JSONResponse(status)
+
+
 @app.post("/api/play")
 async def schedule_play(room_id: str = "default", track_url: str = ""):
     """Schedule playback for a room (master triggers this)."""
@@ -107,9 +115,10 @@ async def schedule_play(room_id: str = "default", track_url: str = ""):
 async def websocket_endpoint(
     websocket: WebSocket,
     room_id: str = Query(default="default"),
+    role: str = Query(default="slave"),
 ):
     """WebSocket connection for receiving play events."""
-    await ws_manager.connect(websocket, room_id)
+    await ws_manager.connect(websocket, room_id, role)
 
     # Ensure we're subscribed to this room's gRPC events
     await ensure_room_subscription(room_id)
@@ -122,11 +131,33 @@ async def websocket_endpoint(
             "server_time": server_time,
         })
 
-        # Keep connection alive and handle incoming messages
+        # Handle incoming messages from client
         while True:
-            # We don't expect messages from client, but need to read to detect disconnect
             data = await websocket.receive_text()
-            # Could handle ping/pong or other messages here if needed
+            message = json.loads(data) if data else {}
+
+            # Handle client ready/not-ready messages
+            if message.get("type") == "client_ready":
+                await ws_manager.set_client_ready(websocket, True, message.get("track_url", ""))
+                print(f"[Gateway] Client ready in room {room_id}: {message.get('track_url')}")
+
+                # Broadcast room status to master
+                status = await ws_manager.get_room_status(room_id)
+                await ws_manager.broadcast_to_room(room_id, {
+                    "type": "room_status",
+                    "status": status,
+                })
+
+            elif message.get("type") == "client_not_ready":
+                await ws_manager.set_client_ready(websocket, False, "")
+                print(f"[Gateway] Client not ready in room {room_id}")
+
+                # Broadcast room status to master
+                status = await ws_manager.get_room_status(room_id)
+                await ws_manager.broadcast_to_room(room_id, {
+                    "type": "room_status",
+                    "status": status,
+                })
 
     except WebSocketDisconnect:
         pass

@@ -204,6 +204,37 @@
             border-radius: 4px;
             font-family: monospace;
         }
+
+        .client-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            margin-bottom: 8px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+        }
+
+        .client-id {
+            font-weight: 500;
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        .client-status {
+            font-size: 0.9em;
+            padding: 4px 12px;
+            border-radius: 12px;
+        }
+
+        .client-status.ready {
+            background: rgba(0, 184, 148, 0.2);
+            color: #00b894;
+        }
+
+        .client-status.not-ready {
+            background: rgba(255, 107, 107, 0.2);
+            color: #ff6b6b;
+        }
     </style>
 </head>
 <body>
@@ -237,6 +268,11 @@
                 <button id="startBtn">Start</button>
                 <button id="playBtn" disabled>Play</button>
             </div>
+        </div>
+
+        <div class="card" id="clientListCard" style="display: none;">
+            <h3 style="margin-bottom: 12px; color: rgba(255, 255, 255, 0.7); font-size: 0.9em; text-transform: uppercase; letter-spacing: 1px;">Connected Clients</h3>
+            <div id="clientList"></div>
         </div>
 
         <div class="card log-container">
