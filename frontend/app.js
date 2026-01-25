@@ -139,20 +139,28 @@ class UnisongApp {
             await this.fetchTrackList();
             this.log(`Found ${this.trackList.length} tracks`);
 
-            // iOS/Mobile workaround: Preload first track during user gesture
+            // iOS/Mobile workaround: Preload ALL tracks during user gesture
             // iOS and mobile browsers block audio loading outside of user gesture context
+            // Also, mobile loading is slow, so we preload to avoid missing play times
             const isMobile = /iPad|iPhone|iPod|Android|webOS|BlackBerry|Windows Phone/i.test(navigator.userAgent) ||
                            (navigator.maxTouchPoints && navigator.maxTouchPoints > 2);
             this.log(`Mobile detected: ${isMobile}, UA: ${navigator.userAgent.substring(0, 50)}...`);
 
             if (isMobile && this.trackList.length > 0) {
-                this.log('Mobile device: preloading first track...');
-                try {
-                    await this.audioPlayer.loadAudio(this.trackList[0].url);
-                    this.log('First track preloaded for mobile');
-                } catch (error) {
-                    this.log(`Warning: Could not preload track: ${error.message}`);
+                this.log(`Mobile device: preloading all ${this.trackList.length} tracks...`);
+                this.setStatus('Preloading tracks...');
+
+                for (let i = 0; i < this.trackList.length; i++) {
+                    try {
+                        this.log(`Preloading ${i + 1}/${this.trackList.length}: ${this.trackList[i].title}`);
+                        await this.audioPlayer.loadAudio(this.trackList[i].url);
+                        // Store in cache
+                        this.audioPlayer.bufferCache[this.trackList[i].url] = this.audioPlayer.audioBuffer;
+                    } catch (error) {
+                        this.log(`Warning: Could not preload track ${i + 1}: ${error.message}`);
+                    }
                 }
+                this.log('All tracks preloaded for mobile');
             }
 
             // Sync clock

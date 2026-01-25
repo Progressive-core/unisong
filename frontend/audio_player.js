@@ -52,10 +52,20 @@ class AudioPlayer {
 
     /**
      * Load and decode an audio file.
+     * Uses cache if available (for mobile preloading).
      */
     async loadAudio(url) {
         if (!this.audioContext) {
             throw new Error('AudioContext not initialized. Call initialize() first.');
+        }
+
+        // Check cache first (mobile preloading)
+        if (this.bufferCache[url]) {
+            console.log('[AudioPlayer] Using cached audio:', url);
+            this.audioBuffer = this.bufferCache[url];
+            this.loadedUrl = url;
+            console.log('[AudioPlayer] Cached audio loaded, duration:', this.audioBuffer.duration, 'seconds');
+            return this.audioBuffer.duration;
         }
 
         console.log('[AudioPlayer] Loading audio:', url);
