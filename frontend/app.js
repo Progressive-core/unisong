@@ -257,6 +257,10 @@ class UnisongApp {
                 this.log(`Server time sync: ${message.server_time}`);
                 break;
 
+            case 'prepare_track':
+                this.handlePrepareTrack(message.track_url);
+                break;
+
             case 'EVENT_TYPE_PLAY_SCHEDULED':
                 this.handlePlayScheduled(message.play_at, message.server_time, message.track_url);
                 break;
@@ -271,11 +275,11 @@ class UnisongApp {
     }
 
     /**
-     * Handle play scheduled event - follows critical sequence: stop → load → schedule.
+     * Handle prepare track event - load track but don't play yet.
      */
-    async handlePlayScheduled(playAtServerTime, serverTime, trackUrl) {
-        this.log(`Play scheduled: track=${trackUrl}`);
-        console.log('[App] handlePlayScheduled called', { playAtServerTime, serverTime, trackUrl });
+    async handlePrepareTrack(trackUrl) {
+        this.log(`Preparing track: ${trackUrl}`);
+        console.log('[App] handlePrepareTrack called', { trackUrl });
 
         // Check if audio context is initialized
         if (!this.audioPlayer.audioContext) {
@@ -298,11 +302,44 @@ class UnisongApp {
             if (this.isMobile) {
                 this.audioPlayer.bufferCache[trackUrl] = this.audioPlayer.audioBuffer;
             }
+            this.log('Track loaded, ready to play');
+            this.setStatus('Ready - waiting for all clients...');
             this.sendReady(trackUrl);  // Notify server we're ready
         } catch (error) {
             this.log(`Error loading audio: ${error.message}`);
             this.setStatus('Error');
             return;
+        }
+    }
+
+    /**
+     * Handle play scheduled event - schedule playback (track already loaded).
+     */
+    async handlePlayScheduled(playAtServerTime, serverTime, trackUrl) {
+        this.log(`Play scheduled: track=${trackUrl}`);
+        console.log('[App] handlePlayScheduled called', { playAtServerTime, serverTime, trackUrl });
+
+        // Check if audio context is initialized
+        if (!this.audioPlayer.audioContext) {
+            this.log('ERROR: Audio not initialized. Click "Start" first!');
+            console.error('[App] Audio context not initialized');
+            return;
+        }
+
+        // Track should already be loaded from handlePrepareTrack
+        // If not loaded (edge case), load it now
+        if (this.audioPlayer.loadedUrl !== trackUrl && !this.audioPlayer.bufferCache[trackUrl]) {
+            this.log(`Track not preloaded, loading now: ${trackUrl}`);
+            try {
+                await this.audioPlayer.loadAudio(trackUrl);
+            } catch (error) {
+                this.log(`Error loading audio: ${error.message}`);
+                this.setStatus('Error');
+                return;
+            }
+        } else if (this.audioPlayer.loadedUrl !== trackUrl) {
+            // Load from cache
+            await this.audioPlayer.loadAudio(trackUrl);
         }
 
         // Update current track index for auto-next
@@ -443,9 +480,20 @@ class UnisongApp {
      */
     updatePlayButton(status) {
         if (this.playBtn) {
-            this.playBtn.disabled = !status.all_ready || status.client_count === 0;
+            // Don't change button state if already playing
+            if (this.audioPlayer.isPlaying) {
+                return;
+            }
+
+            // Enable if all ready, disable if waiting
+            const shouldEnable = status.all_ready && status.client_count > 0;
+            this.playBtn.disabled = !shouldEnable;
+
             if (!status.all_ready && status.client_count > 0) {
                 this.setStatus('Waiting for all clients...');
+            } else if (shouldEnable && !this.audioPlayer.isPlaying) {
+                this.setStatus('Ready');
+                this.playBtn.disabled = false;  // Re-enable for next track
             }
         }
     }
@@ -476,6 +524,8 @@ class UnisongApp {
 
     /**
      * Trigger play command (master only).
+     * Phase 1: Tell all clients to prepare (load) the track.
+     * Phase 2: When all ready, server auto-triggers play.
      */
     async triggerPlay() {
         if (this.role !== 'master') {
@@ -489,26 +539,23 @@ class UnisongApp {
         }
 
         this.playBtn.disabled = true;
-        this.log(`Triggering play: ${this.selectedTrackUrl}`);
+        this.log(`Preparing track for all clients: ${this.selectedTrackUrl}`);
 
         try {
             const params = new URLSearchParams({
                 room_id: this.roomId,
                 track_url: this.selectedTrackUrl,
             });
-            const response = await fetch(`/api/play?${params}`, {
+            const response = await fetch(`/api/prepare?${params}`, {
                 method: 'POST',
             });
             const data = await response.json();
-            this.log(`Play scheduled: play_at=${data.play_at}`);
+            this.log('All clients loading track...');
+            this.setStatus('Waiting for all clients to load...');
         } catch (error) {
-            this.log(`Error triggering play: ${error.message}`);
-        }
-
-        // Re-enable button after a delay
-        setTimeout(() => {
+            this.log(`Error preparing track: ${error.message}`);
             this.playBtn.disabled = false;
-        }, 1000);
+        }
     }
 
     /**

@@ -99,9 +99,32 @@ async def get_room_status(room_id: str):
     return JSONResponse(status)
 
 
+@app.post("/api/prepare")
+async def prepare_track(room_id: str = "default", track_url: str = ""):
+    """Tell all clients to prepare (load) a track, but don't play yet."""
+    # Reset all ready states
+    await ws_manager.reset_ready_states(room_id)
+
+    # Broadcast prepare event to all clients
+    await ws_manager.broadcast_to_room(room_id, {
+        "type": "prepare_track",
+        "track_url": track_url,
+    })
+    print(f"[Gateway] Prepare track broadcast to room {room_id}: {track_url}")
+
+    # Broadcast updated status
+    status = await ws_manager.get_room_status(room_id)
+    await ws_manager.broadcast_to_room(room_id, {
+        "type": "room_status",
+        "status": status,
+    })
+
+    return JSONResponse({"status": "preparing"})
+
+
 @app.post("/api/play")
 async def schedule_play(room_id: str = "default", track_url: str = ""):
-    """Schedule playback for a room (master triggers this)."""
+    """Schedule playback for a room (called when all clients ready)."""
     play_at, server_time = await grpc_client.schedule_play(room_id, track_url)
     return JSONResponse({
         "play_at": play_at,
@@ -141,18 +164,30 @@ async def websocket_endpoint(
                 await ws_manager.set_client_ready(websocket, True, message.get("track_url", ""))
                 print(f"[Gateway] Client ready in room {room_id}: {message.get('track_url')}")
 
-                # Broadcast room status to master
+                # Get room status
                 status = await ws_manager.get_room_status(room_id)
+
+                # Broadcast room status to all clients
                 await ws_manager.broadcast_to_room(room_id, {
                     "type": "room_status",
                     "status": status,
                 })
 
+                # Auto-trigger play when ALL clients are ready
+                if status["all_ready"] and status["client_count"] > 0:
+                    track_url = message.get("track_url", "")
+                    print(f"[Gateway] All clients ready! Auto-triggering play: {track_url}")
+
+                    # Schedule play via gRPC
+                    play_at, server_time = await grpc_client.schedule_play(room_id, track_url)
+                    print(f"[Gateway] Auto-scheduled play_at={play_at}")
+                    # Note: The gRPC event will be broadcast automatically via subscribe_to_room
+
             elif message.get("type") == "client_not_ready":
                 await ws_manager.set_client_ready(websocket, False, "")
                 print(f"[Gateway] Client not ready in room {room_id}")
 
-                # Broadcast room status to master
+                # Broadcast room status to all clients
                 status = await ws_manager.get_room_status(room_id)
                 await ws_manager.broadcast_to_room(room_id, {
                     "type": "room_status",

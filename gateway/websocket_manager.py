@@ -102,6 +102,15 @@ class WebSocketManager:
                 self._clients[websocket].ready = ready
                 self._clients[websocket].track_url = track_url
 
+    async def reset_ready_states(self, room_id: str):
+        """Reset all clients in a room to not ready."""
+        async with self._lock:
+            connections = self._rooms.get(room_id, set())
+            for ws in connections:
+                if ws in self._clients:
+                    self._clients[ws].ready = False
+                    self._clients[ws].track_url = ""
+
     async def get_room_status(self, room_id: str) -> dict:
         """Get status of all clients in a room."""
         async with self._lock:
