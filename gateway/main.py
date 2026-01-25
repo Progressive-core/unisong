@@ -3,10 +3,13 @@ FastAPI Gateway - HTTP/WebSocket interface for browser clients.
 """
 
 import asyncio
+import asyncio.subprocess
 import json
 import os
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
 from fastapi.responses import FileResponse, JSONResponse
@@ -66,6 +69,67 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Unisong Gateway", lifespan=lifespan)
+
+
+# YouTube Download Helpers
+
+def is_valid_youtube_url(url: str) -> bool:
+    """Validate YouTube URL format."""
+    youtube_patterns = [
+        r'(https?://)?(www\.)?(youtube|youtu|youtube-nocookie)\.(com|be)/',
+    ]
+    return any(re.match(pattern, url) for pattern in youtube_patterns)
+
+
+async def monitor_download_progress(
+    process: asyncio.subprocess.Process,
+    room_id: str,
+    url: str,
+):
+    """Monitor yt-dlp download progress and broadcast via WebSocket."""
+    try:
+        while True:
+            line = await process.stdout.readline()
+            if not line:
+                break
+
+            line_str = line.decode('utf-8').strip()
+
+            # Parse progress percentage
+            if "%" in line_str:
+                match = re.search(r'(\d+\.?\d*)%', line_str)
+                if match:
+                    percent = float(match.group(1))
+                    await ws_manager.broadcast_to_room(room_id, {
+                        "type": "youtube_download_progress",
+                        "url": url,
+                        "progress": percent,
+                    })
+
+        await process.wait()
+
+        if process.returncode == 0:
+            await ws_manager.broadcast_to_room(room_id, {
+                "type": "youtube_download_complete",
+                "url": url,
+                "status": "success",
+            })
+        else:
+            stderr = await process.stderr.read()
+            error_msg = stderr.decode('utf-8').strip()
+            await ws_manager.broadcast_to_room(room_id, {
+                "type": "youtube_download_complete",
+                "url": url,
+                "status": "error",
+                "error": error_msg or "Download failed",
+            })
+    except Exception as e:
+        await ws_manager.broadcast_to_room(room_id, {
+            "type": "youtube_download_complete",
+            "url": url,
+            "status": "error",
+            "error": str(e),
+        })
 
 
 # API Routes
@@ -130,6 +194,51 @@ async def schedule_play(room_id: str = "default", track_url: str = ""):
         "play_at": play_at,
         "server_time": server_time,
     })
+
+
+@app.post("/api/youtube/download")
+async def download_youtube(
+    room_id: str = "default",
+    url: str = "",
+):
+    """Download YouTube video as MP3 using yt-dlp."""
+    if not url or not is_valid_youtube_url(url):
+        return JSONResponse(
+            {"error": "Invalid YouTube URL"},
+            status_code=400
+        )
+
+    filename_template = "%(title)s.%(ext)s"
+
+    cmd = [
+        "yt-dlp",
+        "--extract-audio",
+        "--audio-format", "mp3",
+        "--audio-quality", "0",
+        "--output", str(SONGS_DIR / filename_template),
+        "--no-playlist",
+        "--no-check-certificate",
+        "--progress-template", "download:%(progress.percent)s",
+        url,
+    ]
+
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        asyncio.create_task(
+            monitor_download_progress(process, room_id, url)
+        )
+
+        return JSONResponse({"status": "started", "url": url})
+    except Exception as e:
+        return JSONResponse(
+            {"error": f"Download failed: {str(e)}"},
+            status_code=500
+        )
 
 
 # WebSocket endpoint

@@ -21,6 +21,16 @@ class UnisongApp {
         this.isMobile = false;
         this.roomStatus = null;  // Room status (clients and their ready state)
 
+        // YouTube download state
+        this.youtubePanel = null;
+        this.youtubeUrlInput = null;
+        this.youtubeDownloadBtn = null;
+        this.youtubeProgress = null;
+        this.youtubeProgressFill = null;
+        this.youtubeProgressText = null;
+        this.youtubeStatus = null;
+        this.isDownloading = false;
+
         // UI elements
         this.statusEl = null;
         this.roleEl = null;
@@ -67,6 +77,8 @@ class UnisongApp {
             if (clientListCard) {
                 clientListCard.style.display = 'block';
             }
+            // Initialize YouTube panel for master
+            this.initYoutubePanel();
         }
 
         // Event listeners
@@ -80,6 +92,158 @@ class UnisongApp {
             this.currentTrackIndex = this.trackList.findIndex(t => t.url === this.selectedTrackUrl);
             this.log(`Selected track: ${this.selectedTrackUrl}`);
         });
+    }
+
+    /**
+     * Initialize YouTube download panel (master only).
+     */
+    initYoutubePanel() {
+        this.youtubePanel = document.getElementById('youtubePanel');
+        this.youtubeUrlInput = document.getElementById('youtubeUrlInput');
+        this.youtubeDownloadBtn = document.getElementById('youtubeDownloadBtn');
+        this.youtubeProgress = document.getElementById('youtubeProgress');
+        this.youtubeProgressFill = document.getElementById('youtubeProgressFill');
+        this.youtubeProgressText = document.getElementById('youtubeProgressText');
+        this.youtubeStatus = document.getElementById('youtubeStatus');
+
+        document.getElementById('youtubeToggleBtn').style.display = 'flex';
+        document.getElementById('youtubeToggleBtn').addEventListener('click',
+            () => this.toggleYoutubePanel());
+        document.getElementById('youtubePanelOverlay').addEventListener('click',
+            () => this.closeYoutubePanel());
+        document.getElementById('youtubePanelClose').addEventListener('click',
+            () => this.closeYoutubePanel());
+        this.youtubeDownloadBtn.addEventListener('click',
+            () => this.startYoutubeDownload());
+        this.youtubeUrlInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !this.isDownloading) {
+                this.startYoutubeDownload();
+            }
+        });
+    }
+
+    /**
+     * Toggle YouTube panel visibility.
+     */
+    toggleYoutubePanel() {
+        if (this.youtubePanel.classList.contains('active')) {
+            this.closeYoutubePanel();
+        } else {
+            this.youtubePanel.classList.add('active');
+            this.youtubePanel.style.display = 'block';
+            setTimeout(() => this.youtubeUrlInput.focus(), 300);
+        }
+    }
+
+    /**
+     * Close YouTube panel.
+     */
+    closeYoutubePanel() {
+        this.youtubePanel.classList.remove('active');
+        setTimeout(() => {
+            if (!this.youtubePanel.classList.contains('active')) {
+                this.youtubePanel.style.display = 'none';
+            }
+        }, 300);
+    }
+
+    /**
+     * Start YouTube download.
+     */
+    async startYoutubeDownload() {
+        const url = this.youtubeUrlInput.value.trim();
+
+        if (!url) {
+            this.showYoutubeStatus('Please enter a YouTube URL', 'error');
+            return;
+        }
+
+        if (!this.isValidYoutubeUrl(url)) {
+            this.showYoutubeStatus('Invalid YouTube URL', 'error');
+            return;
+        }
+
+        this.isDownloading = true;
+        this.youtubeDownloadBtn.disabled = true;
+        this.youtubeUrlInput.disabled = true;
+        this.youtubeProgress.style.display = 'block';
+        this.youtubeProgressFill.style.width = '0%';
+        this.youtubeStatus.style.display = 'none';
+        this.log(`Starting YouTube download: ${url}`);
+
+        try {
+            const params = new URLSearchParams({
+                room_id: this.roomId,
+                url: url,
+            });
+            const response = await fetch(`/api/youtube/download?${params}`, {
+                method: 'POST',
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || 'Download failed');
+            }
+        } catch (error) {
+            this.log(`Download error: ${error.message}`);
+            this.showYoutubeStatus(error.message, 'error');
+            this.resetYoutubePanel();
+        }
+    }
+
+    /**
+     * Validate YouTube URL format.
+     */
+    isValidYoutubeUrl(url) {
+        return /^(https?:\/\/)?(www\.)?(youtube|youtu|youtube-nocookie)\.(com|be)\/.+$/.test(url);
+    }
+
+    /**
+     * Show status message in YouTube panel.
+     */
+    showYoutubeStatus(message, type = 'error') {
+        this.youtubeStatus.textContent = message;
+        this.youtubeStatus.className = `youtube-status ${type}`;
+        this.youtubeStatus.style.display = 'block';
+    }
+
+    /**
+     * Reset YouTube panel state.
+     */
+    resetYoutubePanel() {
+        this.isDownloading = false;
+        this.youtubeDownloadBtn.disabled = false;
+        this.youtubeUrlInput.disabled = false;
+        this.youtubeProgress.style.display = 'none';
+    }
+
+    /**
+     * Handle YouTube download progress update.
+     */
+    handleYoutubeProgress(progress) {
+        const percent = Math.round(progress);
+        this.youtubeProgressFill.style.width = `${percent}%`;
+        this.youtubeProgressText.textContent = `${percent}%`;
+        this.log(`Download progress: ${percent}%`);
+    }
+
+    /**
+     * Handle YouTube download completion.
+     */
+    async handleYoutubeComplete(status, error) {
+        if (status === 'success') {
+            this.log('Download complete! Refreshing track list...');
+            this.showYoutubeStatus('Download complete!', 'success');
+            await this.fetchTrackList();
+            this.youtubeUrlInput.value = '';
+            setTimeout(() => {
+                this.closeYoutubePanel();
+                this.resetYoutubePanel();
+            }, 2000);
+        } else {
+            this.log(`Download failed: ${error}`);
+            this.showYoutubeStatus(error || 'Download failed', 'error');
+            this.resetYoutubePanel();
+        }
     }
 
     /**
@@ -267,6 +431,14 @@ class UnisongApp {
 
             case 'room_status':
                 this.handleRoomStatus(message.status);
+                break;
+
+            case 'youtube_download_progress':
+                this.handleYoutubeProgress(message.progress);
+                break;
+
+            case 'youtube_download_complete':
+                this.handleYoutubeComplete(message.status, message.error);
                 break;
 
             default:

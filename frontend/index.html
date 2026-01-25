@@ -235,6 +235,188 @@
             background: rgba(255, 107, 107, 0.2);
             color: #ff6b6b;
         }
+
+        /* YouTube Panel - Sliding from bottom */
+        .youtube-panel {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            transform: translateY(100%);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .youtube-panel.active {
+            transform: translateY(0);
+        }
+
+        .youtube-panel-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+        }
+
+        .youtube-panel.active .youtube-panel-overlay {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .youtube-panel-content {
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(20px);
+            border-radius: 24px 24px 0 0;
+            padding: 24px;
+            max-width: 600px;
+            margin: 0 auto;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .youtube-panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .youtube-panel-close {
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            color: #fff;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            font-size: 1.5em;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .youtube-panel-close:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: rotate(90deg);
+        }
+
+        .youtube-input-group {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .youtube-input {
+            flex: 1;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            padding: 14px 16px;
+            color: #fff;
+            font-size: 1em;
+        }
+
+        .youtube-input:focus {
+            border-color: #e94560;
+            outline: none;
+        }
+
+        .youtube-download-btn {
+            background: linear-gradient(90deg, #e94560, #ff6b6b);
+            border: none;
+            color: #fff;
+            padding: 14px 28px;
+            border-radius: 12px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .youtube-download-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .youtube-progress {
+            margin-bottom: 16px;
+        }
+
+        .youtube-progress-bar {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            height: 8px;
+            overflow: hidden;
+            margin-bottom: 8px;
+        }
+
+        .youtube-progress-fill {
+            background: linear-gradient(90deg, #00b894, #00cec9);
+            height: 100%;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .youtube-progress-text {
+            text-align: center;
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 0.9em;
+        }
+
+        .youtube-status {
+            display: none;
+        }
+
+        .youtube-status.success {
+            background: rgba(0, 184, 148, 0.2);
+            color: #00b894;
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .youtube-status.error {
+            background: rgba(255, 107, 107, 0.2);
+            color: #ff6b6b;
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .youtube-toggle-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: linear-gradient(90deg, #e94560, #ff6b6b);
+            border: none;
+            color: #fff;
+            padding: 16px 24px;
+            border-radius: 50px;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 4px 16px rgba(233, 69, 96, 0.4);
+            z-index: 999;
+            transition: transform 0.3s ease;
+        }
+
+        .youtube-toggle-btn:hover {
+            transform: translateY(-4px);
+        }
+
+        @media (max-width: 640px) {
+            .youtube-input-group {
+                flex-direction: column;
+            }
+            .youtube-download-btn {
+                width: 100%;
+            }
+        }
     </style>
 </head>
 <body>
@@ -274,6 +456,50 @@
             <h3 style="margin-bottom: 12px; color: rgba(255, 255, 255, 0.7); font-size: 0.9em; text-transform: uppercase; letter-spacing: 1px;">Connected Clients</h3>
             <div id="clientList"></div>
         </div>
+
+        <!-- YouTube Download Panel (Master Only) -->
+        <div class="youtube-panel" id="youtubePanel" style="display: none;">
+            <div class="youtube-panel-overlay" id="youtubePanelOverlay"></div>
+            <div class="youtube-panel-content">
+                <div class="youtube-panel-header">
+                    <h3>Download from YouTube</h3>
+                    <button class="youtube-panel-close" id="youtubePanelClose">&times;</button>
+                </div>
+
+                <div class="youtube-panel-body">
+                    <div class="youtube-input-group">
+                        <input
+                            type="text"
+                            id="youtubeUrlInput"
+                            class="youtube-input"
+                            placeholder="Paste YouTube URL here..."
+                            autocomplete="off"
+                        />
+                        <button id="youtubeDownloadBtn" class="youtube-download-btn">
+                            Download
+                        </button>
+                    </div>
+
+                    <div class="youtube-progress" id="youtubeProgress" style="display: none;">
+                        <div class="youtube-progress-bar">
+                            <div class="youtube-progress-fill" id="youtubeProgressFill"></div>
+                        </div>
+                        <div class="youtube-progress-text" id="youtubeProgressText">0%</div>
+                    </div>
+
+                    <div class="youtube-status" id="youtubeStatus"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- YouTube Toggle Button (Master Only) -->
+        <button class="youtube-toggle-btn" id="youtubeToggleBtn" style="display: none;">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M23 7l-7 5 7 5V7z"/>
+                <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+            </svg>
+            YouTube
+        </button>
 
         <div class="card log-container">
             <h3>Activity Log</h3>
