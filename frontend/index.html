@@ -213,11 +213,13 @@
             margin-bottom: 8px;
             background: rgba(0, 0, 0, 0.2);
             border-radius: 8px;
+            gap: 12px;
         }
 
         .client-id {
             font-weight: 500;
             color: rgba(255, 255, 255, 0.9);
+            flex: 1;
         }
 
         .client-status {
@@ -234,6 +236,53 @@
         .client-status.not-ready {
             background: rgba(255, 107, 107, 0.2);
             color: #ff6b6b;
+        }
+
+        .volume-control {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .volume-label {
+            font-size: 1.2em;
+            margin: 0;
+        }
+
+        .volume-slider {
+            width: 100px;
+            height: 4px;
+            border-radius: 2px;
+            background: rgba(255, 255, 255, 0.2);
+            outline: none;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+
+        .volume-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #e94560;
+            cursor: pointer;
+        }
+
+        .volume-slider::-moz-range-thumb {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #e94560;
+            cursor: pointer;
+            border: none;
+        }
+
+        .volume-value {
+            font-size: 0.85em;
+            color: rgba(255, 255, 255, 0.7);
+            min-width: 40px;
+            text-align: right;
         }
 
         /* YouTube Panel - Sliding from bottom */
@@ -457,6 +506,13 @@
             <div id="clientList"></div>
         </div>
 
+        <!-- QR Code Card (Master Only) -->
+        <div class="card" id="qrCodeCard" style="display: none;">
+            <h3 style="margin-bottom: 16px; color: rgba(255, 255, 255, 0.7); font-size: 0.9em; text-transform: uppercase; letter-spacing: 1px; text-align: center;">Scan to Connect</h3>
+            <div id="qrcode" style="display: flex; justify-content: center; background: white; padding: 16px; border-radius: 12px; margin-bottom: 12px;"></div>
+            <div style="text-align: center; font-size: 0.85em; color: rgba(255, 255, 255, 0.6); word-break: break-all;" id="connectionUrl"></div>
+        </div>
+
         <!-- YouTube Download Panel (Master Only) -->
         <div class="youtube-panel" id="youtubePanel" style="display: none;">
             <div class="youtube-panel-overlay" id="youtubePanelOverlay"></div>
@@ -518,6 +574,7 @@
         </div>
     </div>
 
+    <script src="/static/qrcode.min.js"></script>
     <script src="/static/sync_diagnostics.js"></script>
     <script src="/static/clock_sync.js"></script>
     <script src="/static/audio_player.js"></script>

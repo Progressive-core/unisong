@@ -7,13 +7,15 @@ import asyncio.subprocess
 import json
 import os
 import re
+import socket
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from zeroconf import ServiceInfo, Zeroconf
 
 from gateway.grpc_client import GrpcClient
 from gateway.websocket_manager import WebSocketManager
@@ -27,6 +29,8 @@ SONGS_DIR = BASE_DIR / "songs"
 # Global instances
 grpc_client = GrpcClient()
 ws_manager = WebSocketManager()
+zeroconf_instance = None
+service_info = None
 
 # Track active room subscriptions
 room_subscriptions: dict[str, asyncio.Task] = {}
@@ -60,12 +64,50 @@ async def ensure_room_subscription(room_id: str):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events."""
+    global zeroconf_instance, service_info
+
+    # Connect to gRPC
     await grpc_client.connect()
+
+    # Register mDNS service
+    try:
+        zeroconf_instance = Zeroconf()
+        local_ip = get_local_ip()
+
+        # Create service info for unisong.local
+        service_info = ServiceInfo(
+            "_http._tcp.local.",
+            "Unisong._http._tcp.local.",
+            addresses=[socket.inet_aton(local_ip)],
+            port=8000,
+            properties={
+                'path': '/',
+                'version': '1.0',
+            },
+            server="unisong.local.",
+        )
+
+        zeroconf_instance.register_service(service_info)
+        print(f"[Gateway] mDNS service registered: unisong.local -> {local_ip}:8000")
+    except Exception as e:
+        print(f"[Gateway] Failed to register mDNS service: {e}")
+        print("[Gateway] Continuing without mDNS...")
+
     yield
+
     # Cleanup
     for task in room_subscriptions.values():
         task.cancel()
     await grpc_client.close()
+
+    # Unregister mDNS service
+    if zeroconf_instance and service_info:
+        try:
+            zeroconf_instance.unregister_service(service_info)
+            zeroconf_instance.close()
+            print("[Gateway] mDNS service unregistered")
+        except Exception as e:
+            print(f"[Gateway] Error unregistering mDNS: {e}")
 
 
 app = FastAPI(title="Unisong Gateway", lifespan=lifespan)
@@ -132,13 +174,52 @@ async def monitor_download_progress(
         })
 
 
+# Helper functions
+
+def get_local_ip():
+    """Get the local network IP address of this server."""
+    try:
+        # Create a socket connection to determine local IP
+        # We don't actually connect, just use it to determine the route
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        local_ip = s.getsockname()[0]
+        s.close()
+        return local_ip
+    except Exception:
+        # Fallback to localhost if we can't determine IP
+        return "127.0.0.1"
+
+
 # API Routes
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for monitoring service readiness."""
+    return JSONResponse({"status": "ok", "service": "unisong-gateway"})
+
 
 @app.get("/api/time")
 async def get_time():
     """Get current server time for clock synchronization."""
     server_time = await grpc_client.get_server_time()
     return JSONResponse({"server_time": server_time})
+
+
+@app.get("/api/network-info")
+async def get_network_info():
+    """Get server network information for QR code generation."""
+    local_ip = get_local_ip()
+    port = 8000  # FastAPI default port
+    hostname = "unisong.local"
+
+    return JSONResponse({
+        "local_ip": local_ip,
+        "port": port,
+        "hostname": hostname,
+        "slave_url": f"http://{hostname}:{port}/connect",
+        "slave_url_ip": f"http://{local_ip}:{port}/connect"  # Fallback if mDNS doesn't work
+    })
 
 
 @app.get("/api/songs")
@@ -303,6 +384,23 @@ async def websocket_endpoint(
                     "status": status,
                 })
 
+            elif message.get("type") == "set_volume":
+                # Master can control volume of individual slaves
+                target_client = message.get("target_client", "")
+                volume = message.get("volume", 1.0)
+
+                if role == "master" and target_client:
+                    # Update volume in manager
+                    await ws_manager.set_client_volume(room_id, target_client, volume)
+
+                    # Send volume update to target client
+                    await ws_manager.send_to_client_by_id(room_id, target_client, {
+                        "type": "volume_change",
+                        "volume": volume,
+                    })
+
+                    print(f"[Gateway] Master set {target_client} volume to {volume:.2f}")
+
     except WebSocketDisconnect:
         pass
     finally:
@@ -315,6 +413,18 @@ async def websocket_endpoint(
 async def serve_index():
     """Serve the main HTML page."""
     return FileResponse(FRONTEND_DIR / "index.html")
+
+
+@app.get("/connect")
+async def connect_slave(room: str = "default"):
+    """Clean URL for slave clients - redirects to /?role=slave&room={room}"""
+    return RedirectResponse(f"/?role=slave&room={room}")
+
+
+@app.get("/master")
+async def connect_master(room: str = "default"):
+    """Clean URL for master clients - redirects to /?role=master&room={room}"""
+    return RedirectResponse(f"/?role=master&room={room}")
 
 
 @app.get("/songs/{filename}")

@@ -17,6 +17,7 @@ class ClientInfo:
     role: str  # 'master' or 'slave'
     ready: bool = False
     track_url: str = ""
+    volume: float = 1.0  # Volume level 0.0 to 1.0 (default 100%)
 
 
 class WebSocketManager:
@@ -124,6 +125,7 @@ class WebSocketManager:
                         "role": info.role,
                         "ready": info.ready,
                         "track_url": info.track_url,
+                        "volume": info.volume,
                     })
             return {
                 "room_id": room_id,
@@ -131,3 +133,26 @@ class WebSocketManager:
                 "clients": clients,
                 "all_ready": all(c["ready"] for c in clients) if clients else False,
             }
+
+    async def set_client_volume(self, room_id: str, client_id: str, volume: float):
+        """Set volume for a specific client."""
+        async with self._lock:
+            connections = self._rooms.get(room_id, set())
+            for ws in connections:
+                if ws in self._clients and self._clients[ws].client_id == client_id:
+                    self._clients[ws].volume = max(0.0, min(1.0, volume))  # Clamp 0-1
+                    return True
+            return False
+
+    async def send_to_client_by_id(self, room_id: str, client_id: str, message: dict):
+        """Send a message to a specific client by their client_id."""
+        async with self._lock:
+            connections = self._rooms.get(room_id, set())
+            for ws in connections:
+                if ws in self._clients and self._clients[ws].client_id == client_id:
+                    try:
+                        await ws.send_json(message)
+                        return True
+                    except Exception:
+                        return False
+            return False

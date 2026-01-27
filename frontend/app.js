@@ -79,6 +79,8 @@ class UnisongApp {
             }
             // Initialize YouTube panel for master
             this.initYoutubePanel();
+            // Initialize QR code for master
+            this.initQRCode();
         }
 
         // Event listeners
@@ -120,6 +122,48 @@ class UnisongApp {
                 this.startYoutubeDownload();
             }
         });
+    }
+
+    /**
+     * Initialize QR code for slave devices to scan (master only).
+     */
+    async initQRCode() {
+        try {
+            // Fetch network info from server
+            const response = await fetch('/api/network-info');
+            const data = await response.json();
+
+            // Show QR code card
+            const qrCodeCard = document.getElementById('qrCodeCard');
+            if (qrCodeCard) {
+                qrCodeCard.style.display = 'block';
+            }
+
+            // Clear any existing QR code
+            const qrElement = document.getElementById('qrcode');
+            qrElement.innerHTML = '';
+
+            // Generate QR code with connection URL
+            new QRCode(qrElement, {
+                text: data.slave_url,
+                width: 256,
+                height: 256,
+                colorDark: '#000000',
+                colorLight: '#ffffff',
+                correctLevel: QRCode.CorrectLevel.H
+            });
+
+            // Display URL below QR code
+            const urlElement = document.getElementById('connectionUrl');
+            if (urlElement) {
+                urlElement.textContent = data.slave_url;
+            }
+
+            this.log(`QR code generated for: ${data.slave_url}`);
+        } catch (error) {
+            console.error('Failed to generate QR code:', error);
+            this.log('Failed to generate QR code');
+        }
     }
 
     /**
@@ -247,6 +291,16 @@ class UnisongApp {
     }
 
     /**
+     * Handle volume change (slave only).
+     */
+    handleVolumeChange(volume) {
+        if (this.role === 'master') return;  // Only slaves respond to volume changes
+
+        this.audioPlayer.setVolume(volume);
+        this.log(`Volume set to ${(volume * 100).toFixed(0)}%`);
+    }
+
+    /**
      * Log a message to the UI.
      */
     log(message) {
@@ -287,6 +341,22 @@ class UnisongApp {
                 type: 'client_not_ready',
             }));
             this.log('Sent not ready');
+        }
+    }
+
+    /**
+     * Set volume for a specific client (master only).
+     */
+    setClientVolume(clientId, volume) {
+        if (this.role !== 'master') return;
+
+        if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+            this.websocket.send(JSON.stringify({
+                type: 'set_volume',
+                target_client: clientId,
+                volume: volume,
+            }));
+            console.log(`[App] Set ${clientId} volume to ${(volume * 100).toFixed(0)}%`);
         }
     }
 
@@ -439,6 +509,10 @@ class UnisongApp {
 
             case 'youtube_download_complete':
                 this.handleYoutubeComplete(message.status, message.error);
+                break;
+
+            case 'volume_change':
+                this.handleVolumeChange(message.volume);
                 break;
 
             default:
@@ -637,13 +711,44 @@ class UnisongApp {
         status.clients.forEach(client => {
             const item = document.createElement('div');
             item.className = 'client-item';
+
+            // Only show volume control for slaves (not for master clients)
+            const volumeControl = client.role === 'slave' ? `
+                <div class="volume-control">
+                    <label class="volume-label">🔊</label>
+                    <input
+                        type="range"
+                        class="volume-slider"
+                        min="0"
+                        max="100"
+                        value="${Math.round((client.volume || 1.0) * 100)}"
+                        data-client-id="${client.client_id}"
+                    />
+                    <span class="volume-value">${Math.round((client.volume || 1.0) * 100)}%</span>
+                </div>
+            ` : '';
+
             item.innerHTML = `
                 <span class="client-id">${client.client_id}</span>
                 <span class="client-status ${client.ready ? 'ready' : 'not-ready'}">
                     ${client.ready ? '✓ Ready' : '⌛ Loading...'}
                 </span>
+                ${volumeControl}
             `;
             clientListEl.appendChild(item);
+
+            // Add event listener to volume slider (only for slaves)
+            if (client.role === 'slave') {
+                const slider = item.querySelector('.volume-slider');
+                const valueDisplay = item.querySelector('.volume-value');
+                if (slider && valueDisplay) {
+                    slider.addEventListener('input', (e) => {
+                        const volume = parseInt(e.target.value) / 100;
+                        valueDisplay.textContent = e.target.value + '%';
+                        this.setClientVolume(client.client_id, volume);
+                    });
+                }
+            }
         });
     }
 

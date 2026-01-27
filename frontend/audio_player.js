@@ -11,6 +11,7 @@ class AudioPlayer {
         this.audioContext = null;
         this.audioBuffer = null;
         this.sourceNode = null;
+        this.gainNode = null;  // For volume control
         this.isPlaying = false;
         this.loadedUrl = null;
         this.onTrackEnded = null;  // Callback for when track finishes naturally
@@ -27,6 +28,11 @@ class AudioPlayer {
         }
 
         this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+        // Create gain node for volume control
+        this.gainNode = this.audioContext.createGain();
+        this.gainNode.connect(this.audioContext.destination);
+        this.gainNode.gain.value = 1.0;  // Default volume 100%
 
         // Resume if suspended (required by some browsers)
         if (this.audioContext.state === 'suspended') {
@@ -152,9 +158,9 @@ class AudioPlayer {
         // Create and configure source node
         this.sourceNode = this.audioContext.createBufferSource();
         this.sourceNode.buffer = this.audioBuffer;
-        this.sourceNode.connect(this.audioContext.destination);
+        this.sourceNode.connect(this.gainNode);  // Connect through gain node for volume control
 
-        console.log('[AudioPlayer] Source connected to destination:', this.audioContext.destination);
+        console.log('[AudioPlayer] Source connected to gain node → destination');
         console.log('[AudioPlayer] Buffer duration:', this.audioBuffer.duration, 'seconds');
 
         // Handle playback end
@@ -208,6 +214,30 @@ class AudioPlayer {
         // Clear current buffer (but keep cache)
         this.audioBuffer = null;
         this.loadedUrl = null;
+    }
+
+    /**
+     * Set playback volume.
+     * @param {number} volume - Volume level from 0.0 (mute) to 1.0 (100%)
+     */
+    setVolume(volume) {
+        if (!this.gainNode) {
+            console.warn('[AudioPlayer] Cannot set volume, gain node not initialized');
+            return;
+        }
+
+        // Clamp volume between 0 and 1
+        const clampedVolume = Math.max(0, Math.min(1, volume));
+        this.gainNode.gain.value = clampedVolume;
+        console.log('[AudioPlayer] Volume set to:', (clampedVolume * 100).toFixed(0) + '%');
+    }
+
+    /**
+     * Get current volume level.
+     * @returns {number} Current volume (0.0 to 1.0)
+     */
+    getVolume() {
+        return this.gainNode ? this.gainNode.gain.value : 1.0;
     }
 
     /**
