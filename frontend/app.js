@@ -84,7 +84,13 @@ class UnisongApp {
         }
 
         // Event listeners
-        this.startBtn.addEventListener('click', () => this.start());
+        this.startBtn.addEventListener('click', () => {
+            if (this.isInitialized) {
+                this.stop();
+            } else {
+                this.start();
+            }
+        });
         this.playBtn.addEventListener('click', () => this.triggerPlay());
 
         // Track selection listener
@@ -436,12 +442,58 @@ class UnisongApp {
                 this.playBtn.disabled = false;
             }
 
+            // Change button to "Stop"
+            this.startBtn.textContent = 'Stop';
+            this.startBtn.disabled = false;
+
         } catch (error) {
             this.setStatus('Error');
             this.log(`Error: ${error.message}`);
             console.error(error);
             this.startBtn.disabled = false;
         }
+    }
+
+    /**
+     * Stop all playback and disconnect.
+     */
+    stop() {
+        this.log('Stopping...');
+
+        // If master, send stop command to all slaves
+        if (this.role === 'master' && this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+            this.websocket.send(JSON.stringify({
+                type: 'stop_all',
+            }));
+            this.log('Sent stop command to all clients');
+        }
+
+        // Stop audio playback
+        if (this.audioPlayer) {
+            this.audioPlayer.stop();
+        }
+
+        // Close WebSocket
+        if (this.websocket) {
+            this.websocket.close();
+            this.websocket = null;
+        }
+
+        // Reset state
+        this.isInitialized = false;
+        this.setStatus('Stopped');
+
+        // Reset button
+        this.startBtn.textContent = 'Start';
+        this.startBtn.disabled = false;
+
+        // Disable play button for master
+        if (this.role === 'master' && this.playBtn) {
+            this.playBtn.disabled = true;
+            this.playBtn.textContent = 'Play';  // Reset to original text
+        }
+
+        this.log('Stopped. Click "Start" to reconnect.');
     }
 
     /**
@@ -513,6 +565,15 @@ class UnisongApp {
 
             case 'volume_change':
                 this.handleVolumeChange(message.volume);
+                break;
+
+            case 'stop_all':
+                // Master sent stop command to all clients
+                if (this.role !== 'master') {
+                    this.log('Master stopped all playback');
+                    this.audioPlayer.stop();
+                    this.setStatus('Stopped by master');
+                }
                 break;
 
             default:
@@ -737,15 +798,59 @@ class UnisongApp {
             `;
             clientListEl.appendChild(item);
 
-            // Add event listener to volume slider (only for slaves)
+            // Add event listeners for volume controls (only for slaves)
             if (client.role === 'slave') {
                 const slider = item.querySelector('.volume-slider');
                 const valueDisplay = item.querySelector('.volume-value');
+                const muteButton = item.querySelector('.volume-label');
+
+                // Store previous volume for unmute
+                let previousVolume = client.volume || 1.0;
+                let isMuted = false;
+
                 if (slider && valueDisplay) {
+                    // Slider change handler
                     slider.addEventListener('input', (e) => {
                         const volume = parseInt(e.target.value) / 100;
                         valueDisplay.textContent = e.target.value + '%';
                         this.setClientVolume(client.client_id, volume);
+
+                        // Update mute state
+                        if (volume > 0) {
+                            isMuted = false;
+                            previousVolume = volume;
+                            muteButton.classList.remove('muted');
+                            muteButton.textContent = '🔊';
+                        } else {
+                            isMuted = true;
+                            muteButton.classList.add('muted');
+                            muteButton.textContent = '🔇';
+                        }
+                    });
+                }
+
+                // Mute/unmute button handler
+                if (muteButton) {
+                    muteButton.addEventListener('click', () => {
+                        if (isMuted) {
+                            // Unmute: restore previous volume
+                            const restoreVolume = previousVolume > 0 ? previousVolume : 1.0;
+                            slider.value = Math.round(restoreVolume * 100);
+                            valueDisplay.textContent = Math.round(restoreVolume * 100) + '%';
+                            this.setClientVolume(client.client_id, restoreVolume);
+                            isMuted = false;
+                            muteButton.classList.remove('muted');
+                            muteButton.textContent = '🔊';
+                        } else {
+                            // Mute: save current volume and set to 0
+                            previousVolume = parseInt(slider.value) / 100;
+                            slider.value = 0;
+                            valueDisplay.textContent = '0%';
+                            this.setClientVolume(client.client_id, 0);
+                            isMuted = true;
+                            muteButton.classList.add('muted');
+                            muteButton.textContent = '🔇';
+                        }
                     });
                 }
             }
@@ -829,6 +934,9 @@ class UnisongApp {
             const data = await response.json();
             this.log('All clients loading track...');
             this.setStatus('Waiting for all clients to load...');
+
+            // Change button text to "Restart" after first play
+            this.playBtn.textContent = 'Restart';
         } catch (error) {
             this.log(`Error preparing track: ${error.message}`);
             this.playBtn.disabled = false;

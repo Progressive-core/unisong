@@ -401,6 +401,16 @@ async def websocket_endpoint(
 
                     print(f"[Gateway] Master set {target_client} volume to {volume:.2f}")
 
+            elif message.get("type") == "stop_all":
+                # Master can stop all clients
+                if role == "master":
+                    # Broadcast stop to all clients in room
+                    await ws_manager.broadcast_to_room(room_id, {
+                        "type": "stop_all",
+                    })
+
+                    print(f"[Gateway] Master stopped all clients in room {room_id}")
+
     except WebSocketDisconnect:
         pass
     finally:
