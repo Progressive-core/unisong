@@ -302,6 +302,131 @@
             text-align: right;
         }
 
+        /* iTunes Library Browser */
+        .itunes-artist {
+            margin-bottom: 8px;
+        }
+
+        .itunes-artist-header {
+            display: flex;
+            align-items: center;
+            padding: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 6px;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.2s;
+        }
+
+        .itunes-artist-header:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .itunes-artist-header .expand-icon {
+            margin-right: 8px;
+            transition: transform 0.2s;
+        }
+
+        .itunes-artist-header.expanded .expand-icon {
+            transform: rotate(90deg);
+        }
+
+        .itunes-albums {
+            padding-left: 20px;
+            display: none;
+        }
+
+        .itunes-albums.visible {
+            display: block;
+        }
+
+        .itunes-album {
+            margin-top: 6px;
+            margin-bottom: 6px;
+        }
+
+        .itunes-album-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 8px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 4px;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.2s;
+        }
+
+        .itunes-album-header:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .itunes-album-title {
+            display: flex;
+            align-items: center;
+            flex: 1;
+        }
+
+        .itunes-album-title .expand-icon {
+            margin-right: 6px;
+            font-size: 0.8em;
+            transition: transform 0.2s;
+        }
+
+        .itunes-album-header.expanded .expand-icon {
+            transform: rotate(90deg);
+        }
+
+        .itunes-album-year {
+            color: rgba(255, 255, 255, 0.4);
+            font-size: 0.85em;
+            margin-right: 8px;
+        }
+
+        .itunes-play-album-btn {
+            background: rgba(233, 69, 96, 0.8);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 4px 10px;
+            font-size: 0.85em;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .itunes-play-album-btn:hover {
+            background: rgba(233, 69, 96, 1);
+        }
+
+        .itunes-tracks {
+            padding-left: 20px;
+            display: none;
+        }
+
+        .itunes-tracks.visible {
+            display: block;
+        }
+
+        .itunes-track {
+            padding: 4px 8px;
+            margin-top: 2px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.2s;
+            font-size: 0.9em;
+        }
+
+        .itunes-track:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .itunes-track-number {
+            color: rgba(255, 255, 255, 0.4);
+            margin-right: 8px;
+            display: inline-block;
+            min-width: 25px;
+        }
+
         /* YouTube Panel - Sliding from bottom */
         .youtube-panel {
             position: fixed;
@@ -516,6 +641,12 @@
                 <button id="startBtn">Start</button>
                 <button id="playBtn" disabled>Play</button>
             </div>
+        </div>
+
+        <!-- iTunes Library (Master Only) -->
+        <div class="card" id="itunesLibraryCard" style="display: none;">
+            <h3 style="margin-bottom: 12px; color: rgba(255, 255, 255, 0.7); font-size: 0.9em; text-transform: uppercase; letter-spacing: 1px;">📀 iTunes Library</h3>
+            <div id="itunesLibrary" style="max-height: 400px; overflow-y: auto;"></div>
         </div>
 
         <div class="card" id="clientListCard" style="display: none;">

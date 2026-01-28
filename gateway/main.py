@@ -8,6 +8,8 @@ import json
 import os
 import re
 import socket
+import sys
+import urllib.parse
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -23,8 +25,37 @@ from core.unisong_pb2 import EventType
 
 # Paths
 BASE_DIR = Path(__file__).parent.parent
-FRONTEND_DIR = BASE_DIR / "frontend"
-SONGS_DIR = BASE_DIR / "songs"
+
+# Determine frontend directory (renderer in Electron, frontend in dev)
+if (BASE_DIR.parent / "renderer").exists():
+    # Running in Electron app
+    FRONTEND_DIR = BASE_DIR.parent / "renderer"
+else:
+    # Running in development
+    FRONTEND_DIR = BASE_DIR / "frontend"
+
+# Determine songs directory based on environment
+# Check if we're running in a bundled Electron app
+is_electron = os.environ.get('ELECTRON_RUN_AS_NODE') or (BASE_DIR.parent / "renderer").exists()
+
+if is_electron and getattr(sys, 'frozen', False):
+    # Running in bundled Electron app - use OS-specific app data directory
+    if sys.platform == 'darwin':
+        SONGS_DIR = Path.home() / 'Library' / 'Application Support' / 'Unisong' / 'songs'
+    elif sys.platform == 'win32':
+        SONGS_DIR = Path(os.getenv('APPDATA', '')) / 'Unisong' / 'songs'
+    else:  # Linux
+        SONGS_DIR = Path.home() / '.config' / 'Unisong' / 'songs'
+    SONGS_DIR.mkdir(parents=True, exist_ok=True)
+    print(f"[Gateway] Using Electron songs directory: {SONGS_DIR}")
+elif is_electron:
+    # Running in Electron dev mode - use project songs folder
+    SONGS_DIR = Path(__file__).parent.parent.parent / "songs"
+    print(f"[Gateway] Using dev songs directory: {SONGS_DIR}")
+else:
+    # Running standalone (development)
+    SONGS_DIR = BASE_DIR / "songs"
+    print(f"[Gateway] Using standalone songs directory: {SONGS_DIR}")
 
 # Global instances
 grpc_client = GrpcClient()
@@ -237,6 +268,23 @@ async def list_songs():
     return JSONResponse({"songs": songs})
 
 
+@app.get("/api/itunes/library")
+async def get_itunes_library():
+    """Get iTunes/Music.app library organized by artist/album."""
+    itunes_library_path = BASE_DIR / "itunes-library.json"
+
+    if not itunes_library_path.exists():
+        return JSONResponse({"artists": []})
+
+    try:
+        with open(itunes_library_path, 'r', encoding='utf-8') as f:
+            library_data = json.load(f)
+        return JSONResponse(library_data)
+    except Exception as e:
+        print(f"[Gateway] Error reading iTunes library: {e}")
+        return JSONResponse({"artists": []})
+
+
 @app.get("/api/room/{room_id}/status")
 async def get_room_status(room_id: str):
     """Get status of all clients in a room."""
@@ -439,11 +487,40 @@ async def connect_master(room: str = "default"):
 
 @app.get("/songs/{filename}")
 async def serve_song(filename: str):
-    """Serve audio files."""
+    """Serve audio files from songs directory."""
     file_path = SONGS_DIR / filename
     if file_path.exists():
         return FileResponse(file_path, media_type="audio/mpeg")
     return JSONResponse({"error": "File not found"}, status_code=404)
+
+
+@app.get("/itunes/file")
+async def serve_itunes_file(path: str):
+    """Serve iTunes audio files from their original location.
+    Path parameter should be URL-encoded absolute path.
+    """
+    try:
+        # Decode the URL-encoded path
+        decoded_path = urllib.parse.unquote(path)
+        file_path = Path(decoded_path)
+
+        # Security: Verify file exists and is a valid audio file
+        if not file_path.exists():
+            return JSONResponse({"error": "File not found"}, status_code=404)
+
+        if not file_path.is_file():
+            return JSONResponse({"error": "Not a file"}, status_code=400)
+
+        # Verify it's an audio file by extension
+        if file_path.suffix.lower() not in ('.mp3', '.m4a', '.wav', '.aac', '.flac', '.ogg'):
+            return JSONResponse({"error": "Not an audio file"}, status_code=400)
+
+        # Serve the file
+        return FileResponse(file_path, media_type="audio/mpeg")
+
+    except Exception as e:
+        print(f"[Gateway] Error serving iTunes file: {e}")
+        return JSONResponse({"error": "Internal server error"}, status_code=500)
 
 
 # Mount static files for JS

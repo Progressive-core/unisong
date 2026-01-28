@@ -394,6 +394,312 @@ class UnisongApp {
     }
 
     /**
+     * Fetch iTunes library from server (master only).
+     */
+    async fetchItunesLibrary() {
+        try {
+            const response = await fetch('/api/itunes/library');
+            const data = await response.json();
+
+            if (!data.artists || data.artists.length === 0) {
+                this.log('iTunes library empty (not scanned yet)');
+                this.showItunesImportButton();
+                return;
+            }
+
+            this.log(`iTunes library loaded: ${data.artists.length} artists`);
+            this.renderItunesLibrary(data.artists);
+
+            // Show the iTunes library card
+            document.getElementById('itunesLibraryCard').style.display = 'block';
+
+        } catch (error) {
+            this.log(`Error fetching iTunes library: ${error.message}`);
+        }
+    }
+
+    /**
+     * Show iTunes import button when library is empty.
+     */
+    showItunesImportButton() {
+        const libraryEl = document.getElementById('itunesLibrary');
+        libraryEl.innerHTML = `
+            <div style="text-align: center; padding: 20px;">
+                <p style="color: rgba(255, 255, 255, 0.6); margin-bottom: 16px;">
+                    Import your Music.app library to browse and play albums
+                </p>
+                <button id="importItunesBtn" style="
+                    background: rgba(233, 69, 96, 0.9);
+                    color: white;
+                    border: none;
+                    border-radius: 8px;
+                    padding: 12px 24px;
+                    font-size: 1em;
+                    cursor: pointer;
+                    transition: background 0.2s;
+                " onmouseover="this.style.background='rgba(233, 69, 96, 1)'"
+                   onmouseout="this.style.background='rgba(233, 69, 96, 0.9)'">
+                    📀 Import iTunes Library
+                </button>
+                <p style="color: rgba(255, 255, 255, 0.4); margin-top: 12px; font-size: 0.85em;">
+                    Note: This will open Music.app to scan your library
+                </p>
+            </div>
+        `;
+
+        // Show the card
+        document.getElementById('itunesLibraryCard').style.display = 'block';
+
+        // Add click handler
+        document.getElementById('importItunesBtn').addEventListener('click', () => {
+            this.triggerItunesScan();
+        });
+    }
+
+    /**
+     * Trigger iTunes library scan (Electron only).
+     */
+    async triggerItunesScan() {
+        // Check if running in Electron
+        if (!window.electron || !window.electron.scanItunesLibrary) {
+            this.log('iTunes import only available in desktop app');
+            alert('iTunes import only available in desktop app');
+            return;
+        }
+
+        const libraryEl = document.getElementById('itunesLibrary');
+        libraryEl.innerHTML = `
+            <div style="text-align: center; padding: 20px; color: rgba(255, 255, 255, 0.6);">
+                <p>Scanning iTunes library...</p>
+                <p style="font-size: 0.85em; margin-top: 8px;">This may take a few seconds</p>
+            </div>
+        `;
+
+        this.log('Triggering iTunes library scan...');
+
+        try {
+            const result = await window.electron.scanItunesLibrary();
+
+            if (result.success) {
+                this.log(`iTunes scan complete: ${result.artistCount} artists found`);
+                // Refresh library display
+                await this.fetchItunesLibrary();
+            } else {
+                this.log(`iTunes scan failed: ${result.error}`);
+                libraryEl.innerHTML = `
+                    <div style="text-align: center; padding: 20px; color: rgba(255, 69, 96, 0.8);">
+                        <p>Failed to scan iTunes library</p>
+                        <p style="font-size: 0.85em; margin-top: 8px;">${result.error}</p>
+                    </div>
+                `;
+            }
+        } catch (error) {
+            this.log(`Error triggering iTunes scan: ${error.message}`);
+            libraryEl.innerHTML = `
+                <div style="text-align: center; padding: 20px; color: rgba(255, 69, 96, 0.8);">
+                    <p>Error: ${error.message}</p>
+                </div>
+            `;
+        }
+    }
+
+    /**
+     * Render iTunes library hierarchical UI.
+     */
+    renderItunesLibrary(artists) {
+        const libraryEl = document.getElementById('itunesLibrary');
+        libraryEl.innerHTML = '';
+
+        if (artists.length === 0) {
+            libraryEl.innerHTML = '<div style="color: rgba(255, 255, 255, 0.5); padding: 8px;">No iTunes tracks found</div>';
+            return;
+        }
+
+        // Add refresh button at the top (Electron only)
+        if (window.electron && window.electron.scanItunesLibrary) {
+            const refreshDiv = document.createElement('div');
+            refreshDiv.style.cssText = 'margin-bottom: 12px; text-align: right;';
+            refreshDiv.innerHTML = `
+                <button id="refreshItunesBtn" style="
+                    background: rgba(255, 255, 255, 0.1);
+                    color: rgba(255, 255, 255, 0.8);
+                    border: 1px solid rgba(255, 255, 255, 0.2);
+                    border-radius: 6px;
+                    padding: 6px 12px;
+                    font-size: 0.85em;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                " onmouseover="this.style.background='rgba(255, 255, 255, 0.15)'"
+                   onmouseout="this.style.background='rgba(255, 255, 255, 0.1)'">
+                    🔄 Refresh Library
+                </button>
+            `;
+            libraryEl.appendChild(refreshDiv);
+
+            document.getElementById('refreshItunesBtn').addEventListener('click', () => {
+                this.triggerItunesScan();
+            });
+        }
+
+        artists.forEach(artist => {
+            // Artist container
+            const artistDiv = document.createElement('div');
+            artistDiv.className = 'itunes-artist';
+
+            // Artist header (clickable)
+            const artistHeader = document.createElement('div');
+            artistHeader.className = 'itunes-artist-header';
+            artistHeader.innerHTML = `
+                <span class="expand-icon">▶</span>
+                <strong>${artist.name}</strong>
+                <span style="margin-left: auto; color: rgba(255, 255, 255, 0.4); font-size: 0.85em;">${artist.albums.length} album${artist.albums.length !== 1 ? 's' : ''}</span>
+            `;
+
+            // Albums container
+            const albumsDiv = document.createElement('div');
+            albumsDiv.className = 'itunes-albums';
+
+            // Render albums
+            artist.albums.forEach(album => {
+                const albumDiv = document.createElement('div');
+                albumDiv.className = 'itunes-album';
+
+                // Album header
+                const albumHeader = document.createElement('div');
+                albumHeader.className = 'itunes-album-header';
+
+                const albumTitle = document.createElement('div');
+                albumTitle.className = 'itunes-album-title';
+                albumTitle.innerHTML = `
+                    <span class="expand-icon">▶</span>
+                    <span>${album.name}</span>
+                `;
+
+                const albumYear = document.createElement('span');
+                albumYear.className = 'itunes-album-year';
+                albumYear.textContent = album.year || '';
+
+                const playAlbumBtn = document.createElement('button');
+                playAlbumBtn.className = 'itunes-play-album-btn';
+                playAlbumBtn.textContent = '▶ Play Album';
+                playAlbumBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.playAlbum(album.tracks);
+                });
+
+                albumHeader.appendChild(albumTitle);
+                albumHeader.appendChild(albumYear);
+                albumHeader.appendChild(playAlbumBtn);
+
+                // Tracks container
+                const tracksDiv = document.createElement('div');
+                tracksDiv.className = 'itunes-tracks';
+
+                // Check if album has multiple discs
+                const isMultiDisc = album.tracks.some(t => t.disc_number > 1);
+
+                // Render tracks
+                album.tracks.forEach(track => {
+                    const trackDiv = document.createElement('div');
+                    trackDiv.className = 'itunes-track';
+                    const discPrefix = isMultiDisc
+                        ? `<span style="color: rgba(255, 255, 255, 0.3); font-size: 0.8em; margin-right: 4px;">D${track.disc_number}</span>`
+                        : '';
+                    trackDiv.innerHTML = `
+                        <span class="itunes-track-number">${track.track_number || ''}</span>
+                        ${discPrefix}
+                        <span>${track.title}</span>
+                    `;
+
+                    // Click to play single track
+                    trackDiv.addEventListener('click', () => {
+                        this.playItunesTrack(track);
+                    });
+
+                    tracksDiv.appendChild(trackDiv);
+                });
+
+                // Album header click to expand/collapse tracks
+                albumHeader.addEventListener('click', (e) => {
+                    // Don't trigger if clicking play button
+                    if (e.target.tagName === 'BUTTON') return;
+
+                    albumHeader.classList.toggle('expanded');
+                    tracksDiv.classList.toggle('visible');
+                });
+
+                albumDiv.appendChild(albumHeader);
+                albumDiv.appendChild(tracksDiv);
+                albumsDiv.appendChild(albumDiv);
+            });
+
+            // Artist header click to expand/collapse albums
+            artistHeader.addEventListener('click', () => {
+                artistHeader.classList.toggle('expanded');
+                albumsDiv.classList.toggle('visible');
+            });
+
+            artistDiv.appendChild(artistHeader);
+            artistDiv.appendChild(albumsDiv);
+            libraryEl.appendChild(artistDiv);
+        });
+    }
+
+    /**
+     * Play a single iTunes track.
+     */
+    playItunesTrack(track) {
+        this.log(`Playing iTunes track: ${track.title}`);
+
+        // Build URL for iTunes file
+        const trackUrl = `/itunes/file?path=${encodeURIComponent(track.location)}`;
+
+        // Set as selected track and trigger play
+        this.selectedTrackUrl = trackUrl;
+        this.triggerPlay();
+    }
+
+    /**
+     * Play an entire album (sequential playback).
+     */
+    playAlbum(tracks) {
+        if (!tracks || tracks.length === 0) return;
+
+        this.log(`Playing album: ${tracks.length} tracks`);
+
+        // Store album queue
+        this.albumQueue = tracks.map(track => ({
+            url: `/itunes/file?path=${encodeURIComponent(track.location)}`,
+            title: track.title,
+        }));
+        this.albumQueueIndex = 0;
+
+        // Play first track
+        this.playNextInAlbum();
+    }
+
+    /**
+     * Play next track in album queue.
+     */
+    playNextInAlbum() {
+        if (!this.albumQueue || this.albumQueueIndex >= this.albumQueue.length) {
+            this.log('Album finished');
+            this.albumQueue = null;
+            this.albumQueueIndex = 0;
+            return;
+        }
+
+        const track = this.albumQueue[this.albumQueueIndex];
+        this.log(`Playing track ${this.albumQueueIndex + 1}/${this.albumQueue.length}: ${track.title}`);
+
+        this.selectedTrackUrl = track.url;
+        this.albumQueueIndex++;
+
+        // Trigger play
+        this.triggerPlay();
+    }
+
+    /**
      * Start the application (called from user click).
      */
     async start() {
@@ -412,6 +718,12 @@ class UnisongApp {
             this.log('Fetching track list...');
             await this.fetchTrackList();
             this.log(`Found ${this.trackList.length} tracks`);
+
+            // Fetch iTunes library (master only)
+            if (this.role === 'master') {
+                this.log('Fetching iTunes library...');
+                await this.fetchItunesLibrary();
+            }
 
             // Detect mobile (for smart preloading strategy)
             this.isMobile = /iPad|iPhone|iPod|Android|webOS|BlackBerry|Windows Phone/i.test(navigator.userAgent) ||
@@ -890,6 +1202,13 @@ class UnisongApp {
         // Only master triggers auto-next
         if (this.role !== 'master') {
             this.log('Waiting for master to trigger next track...');
+            return;
+        }
+
+        // Check if we're playing an album queue
+        if (this.albumQueue && this.albumQueueIndex < this.albumQueue.length) {
+            this.log(`Album playback: ${this.albumQueueIndex}/${this.albumQueue.length} tracks remaining`);
+            this.playNextInAlbum();
             return;
         }
 
